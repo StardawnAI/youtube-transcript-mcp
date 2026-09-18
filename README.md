@@ -133,7 +133,7 @@ Running it again is safe. It updates the workflows and replaces the token.
 ### Claude Code users: do it all from inside Claude Code
 
 ```
-/plugin marketplace add StardawnAI/youtube-transcript-mcp
+/plugin marketplace add https://github.com/StardawnAI/youtube-transcript-mcp.git
 /plugin install youtube-transcript@stardawn-ai
 /youtube-transcript:setup
 ```
@@ -150,7 +150,7 @@ setup printed.
 **Claude Code** (plugin, asks for URL and token):
 
 ```
-/plugin marketplace add StardawnAI/youtube-transcript-mcp
+/plugin marketplace add https://github.com/StardawnAI/youtube-transcript-mcp.git
 /plugin install youtube-transcript@stardawn-ai
 ```
 

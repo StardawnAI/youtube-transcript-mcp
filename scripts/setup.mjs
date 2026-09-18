@@ -20,7 +20,7 @@
 //   --test-video <url>     Video used for the end-to-end test
 //   --skip-test            Do not call the MCP server after setup
 //   --yes                  Do not ask before writing client config files
-//   --marketplace <src>    Claude Code marketplace source (default: StardawnAI/youtube-transcript-mcp)
+//   --marketplace <src>    Claude Code marketplace source (default: the GitHub repo over HTTPS)
 
 import { readFile, writeFile, mkdir, copyFile, access, readdir } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
@@ -37,7 +37,7 @@ const TRANSCRIPT_NAME = 'YouTube Transcript';
 const MCP_NAME = 'YouTube Transcript MCP Server';
 const CREDENTIAL_NAME = 'YouTube Transcript MCP Bearer';
 const SERVER_KEY = 'youtube-transcript';
-const MARKETPLACE = 'StardawnAI/youtube-transcript-mcp';
+const MARKETPLACE = 'https://github.com/StardawnAI/youtube-transcript-mcp.git';
 const PLUGIN_ID = 'youtube-transcript@stardawn-ai';
 const ALL_CLIENTS = ['claude', 'codex', 'cursor', 'antigravity'];
 
