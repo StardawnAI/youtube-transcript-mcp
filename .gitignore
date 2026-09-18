@@ -1,0 +1,11 @@
+# Private workflow exports (contain credentials) — never commit
+\#*.json
+
+# Local working notes
+docs/PLAN.md
+docs/STATUS.md
+
+desktop.ini
+node_modules/
+*.bak
+.env

@@ -1,0 +1,14 @@
+{
+  "name": "stardawn-ai",
+  "description": "Claude Code plugins by Stardawn AI.",
+  "owner": {
+    "name": "Stardawn AI"
+  },
+  "plugins": [
+    {
+      "name": "youtube-transcript",
+      "source": "./",
+      "description": "YouTube transcripts for videos, playlists and search results, served by your own n8n through a free Cloudflare WARP proxy."
+    }
+  ]
+}

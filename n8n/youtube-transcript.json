@@ -1,0 +1,1241 @@
+{
+  "name": "YouTube Transcript",
+  "nodes": [
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "youtube_url"
+            },
+            {
+              "name": "url_type"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        304,
+        192
+      ],
+      "id": "b69d5ec6-b589-499b-872f-d361e2f2e52d",
+      "name": "When Executed by Another Workflow"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "route-search-cond-1",
+              "leftValue": "={{ $('When Executed by Another Workflow').item.json.url_type }}",
+              "rightValue": "search",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "eb6b67ae-cddb-4638-ae79-e5f62cfc8df7",
+      "name": "Route: search?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        560,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://www.youtube.com/results",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "search_query",
+              "value": "={{ $('When Executed by Another Workflow').item.json.youtube_url }}"
+            },
+            {
+              "name": "sp",
+              "value": "EgIQAQ=="
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+            },
+            {
+              "name": "Accept-Language",
+              "value": "en-US,en;q=0.9"
+            }
+          ]
+        },
+        "options": {
+          "proxy": "http://warp:1080",
+          "timeout": 30000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        832,
+        560
+      ],
+      "id": "e0d865b4-83a9-444f-af83-9c0b1fa2ec76",
+      "name": "Search Videos",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================================\n// Read the video IDs from the public YouTube search results page\n// and emit one item per video ({ videoId }), so the playlist loop\n// (Loop Over Items) processes them unchanged. Top 10 results.\n// ============================================================\nconst html = String($json.data || '');\n\nconst videoIds = [...new Set(\n  [...html.matchAll(/\"videoRenderer\":\\{\"videoId\":\"([a-zA-Z0-9_-]{11})\"/g)].map(m => m[1])\n)].slice(0, 10);\n\nif (videoIds.length === 0) {\n  throw new Error(\n    'YouTube search returned no videos. Either nothing matched, ' +\n    'or YouTube blocked the request (check the WARP proxy).'\n  );\n}\n\nreturn videoIds.map(videoId => ({ json: { videoId } }));\n"
+      },
+      "id": "21a4172f-22d6-414f-a026-afd07959232b",
+      "name": "Split Search Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1088,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================================\n// Extract the 11-character video ID from common YouTube URL formats.\n// Playlist requests pass through without a video ID; the playlist\n// branch reads the list ID itself.\n// ============================================================\nconst input = String($json.youtube_url || '').trim();\nconst urlType = String($json.url_type || '').trim().toLowerCase();\n\nconst match =\n  input.match(/[?&]v=([a-zA-Z0-9_-]{11})/) ||                      // youtube.com/watch?v=ID\n  input.match(/youtu\\.be\\/([a-zA-Z0-9_-]{11})/) ||                 // youtu.be/ID\n  input.match(/\\/(?:embed|shorts|live)\\/([a-zA-Z0-9_-]{11})/) ||   // /embed/ID, /shorts/ID, /live/ID\n  input.match(/^([a-zA-Z0-9_-]{11})$/);                           // bare ID\n\nconst videoId = match ? match[1] : '';\n\nif (!videoId && urlType !== 'playlist') {\n  throw new Error(\n    `Could not find a YouTube video ID in \"${input}\". ` +\n    'Pass a video URL, or set url_type to \"playlist\" or \"search\".'\n  );\n}\n\nreturn [{ json: { videoId, url_type: urlType } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        208
+      ],
+      "id": "c20b99ab-c733-40a6-9858-6784f0a41e00",
+      "name": "Clean Youtube Link Format"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "bf62826f-7b61-4ee2-95df-0cfae7c82352",
+              "leftValue": "={{ $json.url_type }}",
+              "rightValue": "playlist",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1152,
+        208
+      ],
+      "id": "8fffe53d-5d9c-431f-9ca7-77faa0c7669b",
+      "name": "isPlaylist?"
+    },
+    {
+      "parameters": {
+        "url": "=https://www.youtube.com/watch?v={{ $json.videoId }}",
+        "options": {
+          "proxy": "http://warp:1080",
+          "timeout": 30000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1952,
+        208
+      ],
+      "id": "0e4f6643-c19b-4b18-9702-a4cd4159d06c",
+      "name": "Extract Transcript API Key",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================================\n// Extract API Info (Multi-Client Fallback)\n// ============================================================\n// Outputs one item per client type so the workflow can iterate\n// through them. If a client triggers bot detection downstream,\n// set botDetected = true and move to the next one.\n//\n// Client priority:\n// 1. ANDROID — best caption availability, works on private IP\n// 2. WEB — standard browser client, works as of March 2026\n// 3. MWEB — mobile web, lighter fingerprint\n// 4. IOS — alternative mobile client\n// 5. TVHTML5_SIMPLY_EMBEDDED_PLAYER — deprecated but fallback\n//\n// Note: ANDROID gets blocked on cloud/datacenter IPs (LOGIN_REQUIRED)\n// but works from residential IPs. That is what the WARP proxy is for.\n// ============================================================\n\nconst html = $json.data;\nconst videoId = $('Clean Youtube Link Format').item.json.videoId;\n\n// ============================================================\n// InnerTube API Key Extraction\n// ============================================================\n// YouTube embeds the InnerTube API key as a JSON property in the HTML:\n//   \"INNERTUBE_API_KEY\":\"AIzaSy...\"\n// We extract it via regex from the page source.\n// ============================================================\nconst apiKeyMatch = html.match(/\\\"INNERTUBE_API_KEY\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"/);\n\nif (!apiKeyMatch) {\n  throw new Error(\n    'Could not find InnerTube API key in page HTML. ' +\n    'Possible causes: video is private, age-restricted, or unavailable.'\n  );\n}\n\nconst apiKey = apiKeyMatch[1];\n\n// ============================================================\n// Client Definitions\n// ============================================================\n// Each client spoofs a different YouTube app/platform.\n// userAgent is extracted as a top-level field for easy\n// referencing in the downstream HTTP Request node header.\n// ============================================================\nconst clients = [\n  {\n    clientId: \"ANDROID\",\n    context: {\n      client: {\n        clientName: \"ANDROID\",\n        clientVersion: \"20.10.38\",\n        androidSdkVersion: 30,\n        userAgent: \"com.google.android.youtube/20.10.38 (Linux; U; Android 11) gzip\",\n        hl: \"en\",\n        timeZone: \"UTC\",\n        utcOffsetMinutes: 0\n      }\n    }\n  },\n  {\n    clientId: \"WEB\",\n    context: {\n      client: {\n        clientName: \"WEB\",\n        clientVersion: \"2.20240101.00.00\",\n        userAgent: \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36\",\n        hl: \"en\",\n        timeZone: \"UTC\",\n        utcOffsetMinutes: 0\n      }\n    }\n  },\n  {\n    clientId: \"MWEB\",\n    context: {\n      client: {\n        clientName: \"MWEB\",\n        clientVersion: \"2.20250312.07.00\",\n        userAgent: \"Mozilla/5.0 (Linux; Android 11) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36\",\n        hl: \"en\",\n        timeZone: \"UTC\",\n        utcOffsetMinutes: 0\n      }\n    }\n  },\n  {\n    clientId: \"IOS\",\n    context: {\n      client: {\n        clientName: \"IOS\",\n        clientVersion: \"20.10.4\",\n        deviceMake: \"Apple\",\n        deviceModel: \"iPhone16,2\",\n        userAgent: \"com.google.ios.youtube/20.10.4 (iPhone16,2; U; CPU iOS 17_7 like Mac OS X;)\",\n        hl: \"en\",\n        timeZone: \"UTC\",\n        utcOffsetMinutes: 0\n      }\n    }\n  },\n  {\n    clientId: \"TVHTML5_SIMPLY_EMBEDDED_PLAYER\",\n    context: {\n      client: {\n        clientName: \"TVHTML5_SIMPLY_EMBEDDED_PLAYER\",\n        clientVersion: \"2.0\",\n        userAgent: \"Mozilla/5.0 (SMART-TV; Linux; Tizen 5.0) AppleWebKit/538.1 (KHTML, like Gecko) Version/5.0 NativeBrowser/2.0 SmartTV Safari/538.1\",\n        hl: \"en\",\n        timeZone: \"UTC\",\n        utcOffsetMinutes: 0\n      },\n      thirdParty: {\n        embedUrl: \"https://www.youtube.com\"\n      }\n    }\n  }\n];\n\n// ============================================================\n// Output — one item per client, all with botDetected = false\n// ============================================================\n// The downstream loop iterates through these items, calls the\n// InnerTube API with each client context, and checks if\n// captions were returned. If not, it moves to the next client.\n// ============================================================\nreturn clients.map(c => ({\n  json: {\n    videoId: videoId,\n    apiKey: apiKey,\n    clientId: c.clientId,\n    context: c.context,\n    userAgent: c.context.client.userAgent,\n    preferredLanguage: \"en\",\n    botDetected: false\n  }\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2160,
+        208
+      ],
+      "id": "5d104340-3e95-4d8f-a849-02e558f8ee40",
+      "name": "Clean API Extraction Data"
+    },
+    {
+      "parameters": {
+        "options": {
+          "reset": "={{ $prevNode.name === 'Clean API Extraction Data' }}"
+        }
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        2368,
+        208
+      ],
+      "id": "57ac9d22-ad1d-480b-9737-6c0b2681e844",
+      "name": "Loop Over Items1"
+    },
+    {
+      "parameters": {
+        "amount": 2
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        2576,
+        336
+      ],
+      "id": "7a5c886f-de94-4e63-934a-1777de4bffee",
+      "name": "2s",
+      "webhookId": "4d53e0cf-47e5-4387-8a1f-fabe34de2bbf"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://www.youtube.com/youtubei/v1/player",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "key",
+              "value": "={{ $json.apiKey }}"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "={{ $json.context.client.userAgent }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n    \"context\": {{ JSON.stringify($json.context) }},\n    \"videoId\": \"{{ $json.videoId }}\"\n  }",
+        "options": {
+          "proxy": "http://warp:1080",
+          "timeout": 30000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        2768,
+        336
+      ],
+      "id": "1b894830-d3d6-4397-8048-0ef68ecaf2cc",
+      "name": "Get Base Url",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================================\n// Evaluate Player Response & Extract Caption Data\n// ============================================================\n// Always extracts whatever data is available in the response.\n// Sets botDetected = true when:\n// - Actual bot block (LOGIN_REQUIRED / \"Sign in to confirm\")\n// - UNPLAYABLE without captions (need to try next client)\n// - ERROR / \"no longer supported\"\n// Stops the loop when captions are found.\n// ============================================================\n\nconst response = $json;\nconst inputData = $('Clean API Extraction Data').item.json;\nconst clientId = inputData.clientId;\nconst videoId = inputData.videoId;\nconst preferredLanguage = inputData.preferredLanguage;\n\nconst status = response.playabilityStatus?.status;\nconst reason = response.playabilityStatus?.reason || '';\n\n// ============================================================\n// Extract video details (available even on UNPLAYABLE)\n// ============================================================\nconst details = response.videoDetails || {};\nconst micro = response.microformat?.playerMicroformatRenderer || {};\n\n// ============================================================\n// Extract caption tracks (may be empty on UNPLAYABLE)\n// ============================================================\nconst captions = response.captions?.playerCaptionsTracklistRenderer;\nconst captionTracks = captions?.captionTracks || [];\n\nconst hasCaptions = captionTracks.length > 0;\n\n// ============================================================\n// Bot detection — actual bot blocks OR unplayable without captions\n// ============================================================\nconst botDetected = (\n  status === 'LOGIN_REQUIRED' ||\n  status === 'ERROR' ||\n  (status === 'UNPLAYABLE' && !hasCaptions) ||\n  reason.includes('Sign in to confirm') ||\n  reason.includes('no longer supported')\n);\n\n// ============================================================\n// Select best caption track (prefer matching language)\n// ============================================================\nlet selectedTrack = captionTracks.find(\n  t => t.languageCode === preferredLanguage\n);\n\n// Fallback: first available track\nif (!selectedTrack && captionTracks.length > 0) {\n  selectedTrack = captionTracks[0];\n}\n\nconst availableTracks = captionTracks.map(t => ({\n  language: t.languageCode,\n  name: t.name?.simpleText || t.name?.runs?.[0]?.text || '',\n  baseUrl: t.baseUrl,\n  isTranslatable: t.isTranslatable || false,\n  kind: t.kind || 'standard',\n  vssId: t.vssId || ''\n}));\n\n// ============================================================\n// Output — always includes all available data\n// ============================================================\nreturn [{\n  json: {\n    videoId: details.videoId || videoId,\n    videoTitle: details.title || micro.title?.simpleText || 'Unknown',\n    videoAuthor: details.author || micro.ownerChannelName || 'Unknown',\n    channelId: details.channelId || micro.externalChannelId || '',\n    viewCount: details.viewCount || micro.viewCount || '0',\n    videoDuration: details.lengthSeconds || micro.lengthSeconds || 0,\n    publishDate: micro.publishDate || '',\n    description: details.shortDescription || micro.description?.simpleText || '',\n    selectedTrack: selectedTrack ? {\n      language: selectedTrack.languageCode,\n      name: selectedTrack.name?.simpleText || selectedTrack.name?.runs?.[0]?.text || '',\n      baseUrl: selectedTrack.baseUrl,\n      isTranslatable: selectedTrack.isTranslatable || false,\n      kind: selectedTrack.kind || 'standard',\n      vssId: selectedTrack.vssId || ''\n    } : null,\n    availableTracks: availableTracks,\n    totalTracks: captionTracks.length,\n    trackType: selectedTrack?.kind || 'none',\n    clientId: clientId,\n    playabilityStatus: status,\n    botDetected: botDetected,\n    hasCaptions: hasCaptions\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2976,
+        336
+      ],
+      "id": "e9b3c1a2-66e1-48bc-a5ae-e3860eeffc48",
+      "name": "Clean Base URL and Check for Bot Detection"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "9df89267-cb94-489f-98aa-47c32456a38f",
+              "leftValue": "={{ $json.botDetected }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        3184,
+        336
+      ],
+      "id": "71b79e98-d53e-4225-992d-1f03276d2f8d",
+      "name": "Is Not a Bot?"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "47bc8f27-2867-4550-9def-a7c68eb1a8ec",
+              "leftValue": "={{ $json.selectedTrack !== null }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        3408,
+        240
+      ],
+      "id": "45819975-266a-4b3a-bf29-cb66f5ebb641",
+      "name": "Has Captions?"
+    },
+    {
+      "parameters": {
+        "amount": 1
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        3632,
+        240
+      ],
+      "id": "29e96d1b-8dab-4ae5-94b6-7a72938539e1",
+      "name": "1s",
+      "webhookId": "27a0a9ae-278e-4e7f-b2c0-3cee8e4b9773"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.selectedTrack.baseUrl }}",
+        "options": {
+          "proxy": "http://warp:1080",
+          "timeout": 30000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        3808,
+        240
+      ],
+      "id": "05d83b09-3b36-49e3-9ac0-448011141dec",
+      "name": "Fetch Transcript",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================================\n// Parse YouTube Transcript (srv3 XML → structured JSON)\n// ============================================================\n// Parses the raw timedtext XML from YouTube's caption API\n// into a clean array of segments with text and timestamps,\n// plus a concatenated fullText for downstream processing.\n//\n// Supports BOTH YouTube srv3 variants:\n//   1. Word-level timed:   <p t=\"...\" d=\"...\"><s>word</s><s>word</s></p>\n//   2. Paragraph-level:    <p t=\"...\" d=\"...\">full line of text</p>\n// ============================================================\n\nconst xml = String($json.data || '');\nconst meta = $('Clean Base URL and Check for Bot Detection').item.json;\n\n// ============================================================\n// Helpers\n// ============================================================\nconst decodeEntities = (str) =>\n  str\n    .replace(/<[^>]+>/g, '')\n    .replace(/&#39;/g, \"'\")\n    .replace(/&quot;/g, '\"')\n    .replace(/&lt;/g, '<')\n    .replace(/&gt;/g, '>')\n    .replace(/&amp;/g, '&')\n    // Some captions carry escaped formatting tags (&lt;b&gt;…)\n    .replace(/<\\/?(?:b|i|u|font)\\b[^>]*>/gi, '')\n    // Caption line breaks are layout, not sentence breaks\n    .replace(/\\s+/g, ' ');\n\nconst formatTime = (ms) => {\n  const totalSec = Math.floor(ms / 1000);\n  const hours = Math.floor(totalSec / 3600);\n  const mins = Math.floor((totalSec % 3600) / 60);\n  const secs = totalSec % 60;\n  const millis = ms % 1000;\n  return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}.${String(millis).padStart(3, '0')}`;\n};\n\nif (!xml.includes('<p ')) {\n  throw new Error('YouTube returned an empty transcript for this video. Try again later, or check the WARP proxy.');\n}\n\n// ============================================================\n// Extract all <p> tags with timing attributes\n// `d` is optional — some videos omit it.\n// ============================================================\nconst segments = [];\nconst pRegex = /<p\\s+t=\"(\\d+)\"(?:\\s+d=\"(\\d+)\")?[^>]*>(.+?)<\\/p>/gs;\nlet match;\n\nwhile ((match = pRegex.exec(xml)) !== null) {\n  const startMs = parseInt(match[1], 10);\n  const durationMs = match[2] ? parseInt(match[2], 10) : 0;\n  const endMs = startMs + durationMs;\n  const rawContent = match[3];\n\n  // Skip empty alignment paragraphs\n  if (rawContent.trim() === '') continue;\n\n  let text;\n\n  if (rawContent.includes('<s')) {\n    // ── Variant 1: word-level timed (<s> segments) ──\n    const words = [];\n    const sRegex = /<s[^>]*>([^<]*)<\\/s>/g;\n    let sMatch;\n    while ((sMatch = sRegex.exec(rawContent)) !== null) {\n      words.push(sMatch[1]);\n    }\n    text = words.join('');\n  } else {\n    // ── Variant 2: paragraph-level (plain text inside <p>) ──\n    text = rawContent;\n  }\n\n  text = decodeEntities(text).trim();\n  if (!text) continue;\n\n  segments.push({\n    text,\n    startMs,\n    endMs,\n    start: formatTime(startMs),\n    end: formatTime(endMs),\n  });\n}\n\n// ============================================================\n// Build full transcript text\n// ============================================================\nconst fullText = segments.map((s) => s.text).join(' ');\n\n// ============================================================\n// Output\n// ============================================================\nreturn [\n  {\n    json: {\n      videoId: meta.videoId,\n      title: meta.videoTitle,\n      author: meta.videoAuthor,\n      language: meta.selectedTrack?.language || null,\n      fullText,\n      segments,\n      totalSegments: segments.length,\n    },\n  },\n];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4000,
+        240
+      ],
+      "id": "1d2c204c-56f8-4a86-ab8d-f1362fce5224",
+      "name": "Get Clean Transcript Data"
+    },
+    {
+      "parameters": {
+        "errorMessage": "No transcript: every YouTube client was blocked or returned no captions. Either the video has no captions, or YouTube is blocking this server. Check that the WARP proxy container is running (see README)."
+      },
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [
+        2576,
+        112
+      ],
+      "id": "76221d1a-ea24-4fa6-8dc7-49fc94e0dc45",
+      "name": "Stop and Error1"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $('When Executed by Another Workflow').item.json.youtube_url || '';\n\n// youtube.com/playlist?list=PLxxx\n// youtube.com/watch?v=xxx&list=PLxxx\n// music.youtube.com/playlist?list=PLxxx\nconst match = input.match(/[?&]list=([a-zA-Z0-9_-]+)/);\n\nif (!match) {\n  throw new Error('No playlist ID found in URL: ' + input);\n}\n\nreturn [{\n  json: {\n    playlistId: match[1]\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1248,
+        828
+      ],
+      "id": "69e9ed9a-9961-43f1-9f19-2c0c0d4e77ba",
+      "name": "Get Playlist ID"
+    },
+    {
+      "parameters": {
+        "url": "=https://www.youtube.com/playlist?list={{ $json.playlistId }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+            },
+            {
+              "name": "Accept-Language",
+              "value": "en-US,en;q=0.9"
+            }
+          ]
+        },
+        "options": {
+          "proxy": "http://warp:1080",
+          "timeout": 30000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1456,
+        828
+      ],
+      "id": "1eaef3a4-554b-46d8-96d0-17af8f770a35",
+      "name": "Get Videos from Playlist",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================================\n// Read the video IDs from the public playlist page. Every entry\n// carries \"watchEndpoint\":{\"videoId\":…,\"playlistId\":…,\"index\":…}.\n// The first page lists up to 100 videos; the first 50 are used.\n// ============================================================\nconst html = String($json.data || '');\nconst playlistId = $('Get Playlist ID').first().json.playlistId;\n\nconst re = /\"watchEndpoint\":\\{\"videoId\":\"([a-zA-Z0-9_-]{11})\",\"playlistId\":\"([^\"]+)\",\"index\":(\\d+)/g;\nconst indexById = new Map();\n\nfor (const m of html.matchAll(re)) {\n  if (m[2] === playlistId && !indexById.has(m[1])) {\n    indexById.set(m[1], Number(m[3]));\n  }\n}\n\nconst videoIds = [...indexById.entries()]\n  .sort((a, b) => a[1] - b[1])\n  .map(([id]) => id)\n  .slice(0, 50);\n\nif (videoIds.length === 0) {\n  throw new Error(\n    `No videos found in playlist ${playlistId}. It may be private or empty, ` +\n    'or YouTube blocked the request (check the WARP proxy).'\n  );\n}\n\nreturn videoIds.map(videoId => ({ json: { videoId } }));\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1664,
+        828
+      ],
+      "id": "7464ed1d-73c5-4d47-a8c8-fbb08bcae581",
+      "name": "Split in Items"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        1872,
+        828
+      ],
+      "id": "2e16b3be-8ed9-449c-93b9-016f0dccf117",
+      "name": "Loop Over Items"
+    },
+    {
+      "parameters": {
+        "url": "=https://www.youtube.com/watch?v={{ $json.videoId }}",
+        "options": {
+          "proxy": "http://warp:1080",
+          "timeout": 30000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        2496,
+        940
+      ],
+      "id": "18fd8bbe-5290-40bc-836d-b5fef7ae204b",
+      "name": "Extract Transcript API Key1",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================================\n// Extract API Info (Multi-Client Fallback)\n// ============================================================\n// Outputs one item per client type so the workflow can iterate\n// through them. If a client triggers bot detection downstream,\n// set botDetected = true and move to the next one.\n//\n// Client priority:\n// 1. ANDROID — best caption availability, works on private IP\n// 2. WEB — standard browser client, works as of March 2026\n// 3. MWEB — mobile web, lighter fingerprint\n// 4. IOS — alternative mobile client\n// 5. TVHTML5_SIMPLY_EMBEDDED_PLAYER — deprecated but fallback\n//\n// Note: ANDROID gets blocked on cloud/datacenter IPs (LOGIN_REQUIRED)\n// but works from residential IPs. That is what the WARP proxy is for.\n// ============================================================\n\nconst html = $json.data;\nconst videoId = $('Loop Over Items').item.json.videoId;\n\n// ============================================================\n// InnerTube API Key Extraction\n// ============================================================\n// YouTube embeds the InnerTube API key as a JSON property in the HTML:\n//   \"INNERTUBE_API_KEY\":\"AIzaSy...\"\n// We extract it via regex from the page source.\n// ============================================================\nconst apiKeyMatch = html.match(/\\\"INNERTUBE_API_KEY\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"/);\n\nif (!apiKeyMatch) {\n  throw new Error(\n    'Could not find InnerTube API key in page HTML. ' +\n    'Possible causes: video is private, age-restricted, or unavailable.'\n  );\n}\n\nconst apiKey = apiKeyMatch[1];\n\n// ============================================================\n// Client Definitions\n// ============================================================\n// Each client spoofs a different YouTube app/platform.\n// userAgent is extracted as a top-level field for easy\n// referencing in the downstream HTTP Request node header.\n// ============================================================\nconst clients = [\n  {\n    clientId: \"ANDROID\",\n    context: {\n      client: {\n        clientName: \"ANDROID\",\n        clientVersion: \"20.10.38\",\n        androidSdkVersion: 30,\n        userAgent: \"com.google.android.youtube/20.10.38 (Linux; U; Android 11) gzip\",\n        hl: \"en\",\n        timeZone: \"UTC\",\n        utcOffsetMinutes: 0\n      }\n    }\n  },\n  {\n    clientId: \"WEB\",\n    context: {\n      client: {\n        clientName: \"WEB\",\n        clientVersion: \"2.20240101.00.00\",\n        userAgent: \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36\",\n        hl: \"en\",\n        timeZone: \"UTC\",\n        utcOffsetMinutes: 0\n      }\n    }\n  },\n  {\n    clientId: \"MWEB\",\n    context: {\n      client: {\n        clientName: \"MWEB\",\n        clientVersion: \"2.20250312.07.00\",\n        userAgent: \"Mozilla/5.0 (Linux; Android 11) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36\",\n        hl: \"en\",\n        timeZone: \"UTC\",\n        utcOffsetMinutes: 0\n      }\n    }\n  },\n  {\n    clientId: \"IOS\",\n    context: {\n      client: {\n        clientName: \"IOS\",\n        clientVersion: \"20.10.4\",\n        deviceMake: \"Apple\",\n        deviceModel: \"iPhone16,2\",\n        userAgent: \"com.google.ios.youtube/20.10.4 (iPhone16,2; U; CPU iOS 17_7 like Mac OS X;)\",\n        hl: \"en\",\n        timeZone: \"UTC\",\n        utcOffsetMinutes: 0\n      }\n    }\n  },\n  {\n    clientId: \"TVHTML5_SIMPLY_EMBEDDED_PLAYER\",\n    context: {\n      client: {\n        clientName: \"TVHTML5_SIMPLY_EMBEDDED_PLAYER\",\n        clientVersion: \"2.0\",\n        userAgent: \"Mozilla/5.0 (SMART-TV; Linux; Tizen 5.0) AppleWebKit/538.1 (KHTML, like Gecko) Version/5.0 NativeBrowser/2.0 SmartTV Safari/538.1\",\n        hl: \"en\",\n        timeZone: \"UTC\",\n        utcOffsetMinutes: 0\n      },\n      thirdParty: {\n        embedUrl: \"https://www.youtube.com\"\n      }\n    }\n  }\n];\n\n// ============================================================\n// Output — one item per client, all with botDetected = false\n// ============================================================\n// The downstream loop iterates through these items, calls the\n// InnerTube API with each client context, and checks if\n// captions were returned. If not, it moves to the next client.\n// ============================================================\nreturn clients.map(c => ({\n  json: {\n    videoId: videoId,\n    apiKey: apiKey,\n    clientId: c.clientId,\n    context: c.context,\n    userAgent: c.context.client.userAgent,\n    preferredLanguage: \"en\",\n    botDetected: false\n  }\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2704,
+        940
+      ],
+      "id": "aecb86d9-701f-47e1-8eb3-59a8ae3ccb90",
+      "name": "Clean API Extraction Data1"
+    },
+    {
+      "parameters": {
+        "options": {
+          "reset": "={{ $prevNode.name === 'Clean API Extraction Data1' }}"
+        }
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        2912,
+        940
+      ],
+      "id": "8a2fee2e-29c4-4f6a-ab7e-347ea0979197",
+      "name": "Loop Over Items2"
+    },
+    {
+      "parameters": {
+        "amount": 2
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        3120,
+        1068
+      ],
+      "id": "5d7b70e8-fda8-42e9-b1f5-f861cf440dc8",
+      "name": "2s1",
+      "webhookId": "fe2ce874-4a92-4ccb-aa19-5c0741f51a00"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://www.youtube.com/youtubei/v1/player",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "key",
+              "value": "={{ $json.apiKey }}"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "={{ $json.context.client.userAgent }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n    \"context\": {{ JSON.stringify($json.context) }},\n    \"videoId\": \"{{ $json.videoId }}\"\n  }",
+        "options": {
+          "proxy": "http://warp:1080",
+          "timeout": 30000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        3312,
+        1068
+      ],
+      "id": "c650b3fd-737d-4c8a-b77d-c38584f7a449",
+      "name": "Get Base Url1",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================================\n// Evaluate Player Response & Extract Caption Data\n// ============================================================\n// Always extracts whatever data is available in the response.\n// Sets botDetected = true when:\n// - Actual bot block (LOGIN_REQUIRED / \"Sign in to confirm\")\n// - UNPLAYABLE without captions (need to try next client)\n// - ERROR / \"no longer supported\"\n// Stops the loop when captions are found.\n// ============================================================\n\nconst response = $json;\nconst inputData = $('Clean API Extraction Data1').item.json;\nconst clientId = inputData.clientId;\nconst videoId = inputData.videoId;\nconst preferredLanguage = inputData.preferredLanguage;\n\nconst status = response.playabilityStatus?.status;\nconst reason = response.playabilityStatus?.reason || '';\n\n// ============================================================\n// Extract video details (available even on UNPLAYABLE)\n// ============================================================\nconst details = response.videoDetails || {};\nconst micro = response.microformat?.playerMicroformatRenderer || {};\n\n// ============================================================\n// Extract caption tracks (may be empty on UNPLAYABLE)\n// ============================================================\nconst captions = response.captions?.playerCaptionsTracklistRenderer;\nconst captionTracks = captions?.captionTracks || [];\n\nconst hasCaptions = captionTracks.length > 0;\n\n// ============================================================\n// Bot detection — actual bot blocks OR unplayable without captions\n// ============================================================\nconst botDetected = (\n  status === 'LOGIN_REQUIRED' ||\n  status === 'ERROR' ||\n  (status === 'UNPLAYABLE' && !hasCaptions) ||\n  reason.includes('Sign in to confirm') ||\n  reason.includes('no longer supported')\n);\n\n// ============================================================\n// Select best caption track (prefer matching language)\n// ============================================================\nlet selectedTrack = captionTracks.find(\n  t => t.languageCode === preferredLanguage\n);\n\n// Fallback: first available track\nif (!selectedTrack && captionTracks.length > 0) {\n  selectedTrack = captionTracks[0];\n}\n\nconst availableTracks = captionTracks.map(t => ({\n  language: t.languageCode,\n  name: t.name?.simpleText || t.name?.runs?.[0]?.text || '',\n  baseUrl: t.baseUrl,\n  isTranslatable: t.isTranslatable || false,\n  kind: t.kind || 'standard',\n  vssId: t.vssId || ''\n}));\n\n// ============================================================\n// Output — always includes all available data\n// ============================================================\nreturn [{\n  json: {\n    videoId: details.videoId || videoId,\n    videoTitle: details.title || micro.title?.simpleText || 'Unknown',\n    videoAuthor: details.author || micro.ownerChannelName || 'Unknown',\n    channelId: details.channelId || micro.externalChannelId || '',\n    viewCount: details.viewCount || micro.viewCount || '0',\n    videoDuration: details.lengthSeconds || micro.lengthSeconds || 0,\n    publishDate: micro.publishDate || '',\n    description: details.shortDescription || micro.description?.simpleText || '',\n    selectedTrack: selectedTrack ? {\n      language: selectedTrack.languageCode,\n      name: selectedTrack.name?.simpleText || selectedTrack.name?.runs?.[0]?.text || '',\n      baseUrl: selectedTrack.baseUrl,\n      isTranslatable: selectedTrack.isTranslatable || false,\n      kind: selectedTrack.kind || 'standard',\n      vssId: selectedTrack.vssId || ''\n    } : null,\n    availableTracks: availableTracks,\n    totalTracks: captionTracks.length,\n    trackType: selectedTrack?.kind || 'none',\n    clientId: clientId,\n    playabilityStatus: status,\n    botDetected: botDetected,\n    hasCaptions: hasCaptions\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3520,
+        1068
+      ],
+      "id": "58affefe-f27b-431f-a56d-6d5f7743d9b2",
+      "name": "Clean Base URL and Check for Bot Detection1"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "9df89267-cb94-489f-98aa-47c32456a38f",
+              "leftValue": "={{ $json.botDetected }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        3728,
+        1068
+      ],
+      "id": "12824427-eaf9-400a-aced-ce885e1f8c0b",
+      "name": "Is Not a Bot?1"
+    },
+    {
+      "parameters": {
+        "amount": 1
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        3824,
+        860
+      ],
+      "id": "34efc27e-e232-4be3-9386-f99ef0ee55e6",
+      "name": "1s1",
+      "webhookId": "3d810044-2b25-41d3-9496-b66d6610d103"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "a3bfd04d-b71d-42dd-a16d-b7ea46482f57",
+              "leftValue": "={{ $json.selectedTrack !== null }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        4032,
+        860
+      ],
+      "id": "699933e5-5e43-4855-b336-743c6dca0d0b",
+      "name": "Has Captions?1"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.selectedTrack.baseUrl }}",
+        "options": {
+          "proxy": "http://warp:1080",
+          "timeout": 30000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        4320,
+        860
+      ],
+      "id": "cc659a1b-ae3d-492b-b918-16893f192fce",
+      "name": "Fetch Transcript1",
+      "onError": "continueErrorOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================================\n// Parse YouTube Transcript (srv3 XML → structured JSON)\n// ============================================================\n// Parses the raw timedtext XML from YouTube's caption API\n// into a clean array of segments with text and timestamps,\n// plus a concatenated fullText for downstream processing.\n//\n// Supports BOTH YouTube srv3 variants:\n//   1. Word-level timed:   <p t=\"...\" d=\"...\"><s>word</s><s>word</s></p>\n//   2. Paragraph-level:    <p t=\"...\" d=\"...\">full line of text</p>\n// ============================================================\n\nconst xml = String($json.data || '');\nconst meta = $('Clean Base URL and Check for Bot Detection1').item.json;\n\n// ============================================================\n// Helpers\n// ============================================================\nconst decodeEntities = (str) =>\n  str\n    .replace(/<[^>]+>/g, '')\n    .replace(/&#39;/g, \"'\")\n    .replace(/&quot;/g, '\"')\n    .replace(/&lt;/g, '<')\n    .replace(/&gt;/g, '>')\n    .replace(/&amp;/g, '&')\n    // Some captions carry escaped formatting tags (&lt;b&gt;…)\n    .replace(/<\\/?(?:b|i|u|font)\\b[^>]*>/gi, '')\n    // Caption line breaks are layout, not sentence breaks\n    .replace(/\\s+/g, ' ');\n\nconst formatTime = (ms) => {\n  const totalSec = Math.floor(ms / 1000);\n  const hours = Math.floor(totalSec / 3600);\n  const mins = Math.floor((totalSec % 3600) / 60);\n  const secs = totalSec % 60;\n  const millis = ms % 1000;\n  return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}.${String(millis).padStart(3, '0')}`;\n};\n\nif (!xml.includes('<p ')) {\n  return [{\n    json: {\n      videoId: meta.videoId,\n      title: meta.videoTitle,\n      skipped: true,\n      reason: 'empty transcript response',\n    },\n  }];\n}\n\n// ============================================================\n// Extract all <p> tags with timing attributes\n// `d` is optional — some videos omit it.\n// ============================================================\nconst segments = [];\nconst pRegex = /<p\\s+t=\"(\\d+)\"(?:\\s+d=\"(\\d+)\")?[^>]*>(.+?)<\\/p>/gs;\nlet match;\n\nwhile ((match = pRegex.exec(xml)) !== null) {\n  const startMs = parseInt(match[1], 10);\n  const durationMs = match[2] ? parseInt(match[2], 10) : 0;\n  const endMs = startMs + durationMs;\n  const rawContent = match[3];\n\n  // Skip empty alignment paragraphs\n  if (rawContent.trim() === '') continue;\n\n  let text;\n\n  if (rawContent.includes('<s')) {\n    // ── Variant 1: word-level timed (<s> segments) ──\n    const words = [];\n    const sRegex = /<s[^>]*>([^<]*)<\\/s>/g;\n    let sMatch;\n    while ((sMatch = sRegex.exec(rawContent)) !== null) {\n      words.push(sMatch[1]);\n    }\n    text = words.join('');\n  } else {\n    // ── Variant 2: paragraph-level (plain text inside <p>) ──\n    text = rawContent;\n  }\n\n  text = decodeEntities(text).trim();\n  if (!text) continue;\n\n  segments.push({\n    text,\n    startMs,\n    endMs,\n    start: formatTime(startMs),\n    end: formatTime(endMs),\n  });\n}\n\n// ============================================================\n// Build full transcript text\n// ============================================================\nconst fullText = segments.map((s) => s.text).join(' ');\n\n// ============================================================\n// Output\n// ============================================================\nreturn [\n  {\n    json: {\n      videoId: meta.videoId,\n      title: meta.videoTitle,\n      author: meta.videoAuthor,\n      language: meta.selectedTrack?.language || null,\n      skipped: false,\n      fullText,\n      segments,\n      totalSegments: segments.length,\n    },\n  },\n];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4512,
+        972
+      ],
+      "id": "ed53a67b-2203-4c9a-b61a-4728ec855f82",
+      "name": "Get Clean Transcript Data1"
+    },
+    {
+      "parameters": {
+        "amount": "={{ Math.floor(Math.random() * 11) + 5 }}"
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        4720,
+        972
+      ],
+      "id": "b95fb777-843b-49b5-9bff-4a85b46dbe21",
+      "name": "Wait1",
+      "webhookId": "d196c3d7-99b6-40f2-92dd-9abee6d2fcf3"
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{\n  json: {\n    videoId: $('Loop Over Items').item.json.videoId,\n    skipped: true,\n    reason: 'no captions available, or every client was blocked by YouTube'\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3120,
+        844
+      ],
+      "id": "17da35c5-48a4-4fed-b59f-56912ceb06f4",
+      "name": "Reason for Denial"
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{\n  json: {\n    videoId: $('Clean Base URL and Check for Bot Detection1').item.json.videoId,\n    skipped: true,\n    reason: 'transcript download failed: ' + ($json.error?.message || 'unknown error')\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4512,
+        748
+      ],
+      "id": "817bbcbb-aa03-4e76-ba3a-92fb29aef5a0",
+      "name": "Skip Failed Video"
+    },
+    {
+      "parameters": {
+        "jsCode": "const videos = $input.all().map(item => item.json);\n\nreturn [{\n  json: {\n    totalVideos: videos.length,\n    successful: videos.filter(v => !v.skipped).length,\n    skipped: videos.filter(v => v.skipped).length,\n    videos: videos\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2304,
+        636
+      ],
+      "id": "f2f80241-30eb-47aa-88c7-c609a54ea83e",
+      "name": "Return Transcripts"
+    },
+    {
+      "parameters": {
+        "content": "## YouTube traffic goes through Cloudflare WARP\nEvery request to youtube.com uses the proxy **http://warp:1080** (HTTP Request node → Options → Proxy). Keep it http:// — n8n ignores socks5:// proxy URLs.\n\n`warp` is a free Cloudflare WARP container on the same Docker network as n8n (see README). Without it, YouTube blocks most cloud/datacenter IPs.\n\nn8n on a home connection? Re-run setup with `--proxy none`, or clear the Proxy field in the HTTP nodes.",
+        "height": 260,
+        "width": 460,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        240,
+        -160
+      ],
+      "id": "f0f9dd6e-866a-4c0e-ae2c-4aa6f0a3d0dc",
+      "name": "Sticky Note"
+    }
+  ],
+  "connections": {
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Route: search?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route: search?": {
+      "main": [
+        [
+          {
+            "node": "Search Videos",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Clean Youtube Link Format",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search Videos": {
+      "main": [
+        [
+          {
+            "node": "Split Search Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Search Results": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clean Youtube Link Format": {
+      "main": [
+        [
+          {
+            "node": "isPlaylist?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "isPlaylist?": {
+      "main": [
+        [
+          {
+            "node": "Get Playlist ID",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Extract Transcript API Key",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Transcript API Key": {
+      "main": [
+        [
+          {
+            "node": "Clean API Extraction Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clean API Extraction Data": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items1": {
+      "main": [
+        [
+          {
+            "node": "Stop and Error1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "2s",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "2s": {
+      "main": [
+        [
+          {
+            "node": "Get Base Url",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Base Url": {
+      "main": [
+        [
+          {
+            "node": "Clean Base URL and Check for Bot Detection",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clean Base URL and Check for Bot Detection": {
+      "main": [
+        [
+          {
+            "node": "Is Not a Bot?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Not a Bot?": {
+      "main": [
+        [
+          {
+            "node": "Has Captions?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Loop Over Items1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Captions?": {
+      "main": [
+        [
+          {
+            "node": "1s",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Loop Over Items1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "1s": {
+      "main": [
+        [
+          {
+            "node": "Fetch Transcript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Transcript": {
+      "main": [
+        [
+          {
+            "node": "Get Clean Transcript Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Playlist ID": {
+      "main": [
+        [
+          {
+            "node": "Get Videos from Playlist",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Videos from Playlist": {
+      "main": [
+        [
+          {
+            "node": "Split in Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split in Items": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [
+          {
+            "node": "Return Transcripts",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Extract Transcript API Key1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Transcript API Key1": {
+      "main": [
+        [
+          {
+            "node": "Clean API Extraction Data1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clean API Extraction Data1": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items2": {
+      "main": [
+        [
+          {
+            "node": "Reason for Denial",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "2s1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "2s1": {
+      "main": [
+        [
+          {
+            "node": "Get Base Url1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Base Url1": {
+      "main": [
+        [
+          {
+            "node": "Clean Base URL and Check for Bot Detection1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clean Base URL and Check for Bot Detection1": {
+      "main": [
+        [
+          {
+            "node": "Is Not a Bot?1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Not a Bot?1": {
+      "main": [
+        [
+          {
+            "node": "1s1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Loop Over Items2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "1s1": {
+      "main": [
+        [
+          {
+            "node": "Has Captions?1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Captions?1": {
+      "main": [
+        [
+          {
+            "node": "Fetch Transcript1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Loop Over Items2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Transcript1": {
+      "main": [
+        [
+          {
+            "node": "Get Clean Transcript Data1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Skip Failed Video",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Skip Failed Video": {
+      "main": [
+        [
+          {
+            "node": "Wait1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Clean Transcript Data1": {
+      "main": [
+        [
+          {
+            "node": "Wait1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait1": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reason for Denial": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

@@ -1,0 +1,88 @@
+{
+  "name": "YouTube Transcript MCP Server",
+  "nodes": [
+    {
+      "parameters": {
+        "authentication": "bearerAuth",
+        "path": "3c3f6e0e-8f3e-4d55-9a57-6f1f3b8a2c11"
+      },
+      "type": "@n8n/n8n-nodes-langchain.mcpTrigger",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "id": "5e807a34-2e4e-406b-9b06-ef62f46b6046",
+      "name": "MCP Server Trigger",
+      "webhookId": "3c3f6e0e-8f3e-4d55-9a57-6f1f3b8a2c11"
+    },
+    {
+      "parameters": {
+        "description": "Get YouTube transcripts, or search YouTube and get the transcripts of the top results.\n\nThree modes via url_type:\n- \"video\": pass a single video URL (watch?v=..., youtu.be/..., shorts/...) as youtube_url. Returns that video's transcript (fullText plus timestamped segments).\n- \"playlist\": pass a playlist URL (contains list=) as youtube_url. Returns the transcripts of up to 50 videos in the playlist.\n- \"search\": pass a SEARCH TERM as youtube_url (e.g. \"minimize costs claude code\"), NOT a URL. Returns the transcripts of the top 10 videos for that term.\n\nPlaylist and search pause 5-15 seconds between videos to avoid YouTube's bot detection, so they take a few minutes (a 10-video search about 2-4 minutes). Videos that fail are returned with skipped: true and a reason.\n\nIMPORTANT: If a URL contains a `list=` parameter, ALWAYS ask the user first whether they want only the single video (url_type \"video\") or the whole playlist (url_type \"playlist\"). Do NOT guess. A plain watch?v=... link without list= -> use \"video\" directly. A plain search phrase with no URL -> use \"search\".",
+        "workflowId": {
+          "__rl": true,
+          "mode": "list",
+          "value": ""
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "youtube_url": "={{ $fromAI('youtube_url', ``, 'string') }}",
+            "url_type": "={{ $fromAI('url_type', ``, 'string') }}"
+          },
+          "matchingColumns": [
+            "youtube_url"
+          ],
+          "schema": [
+            {
+              "id": "youtube_url",
+              "displayName": "youtube_url",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "url_type",
+              "displayName": "url_type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        32,
+        240
+      ],
+      "id": "bc39f5b0-c0cc-4f4f-8dcc-e50473c6cbd2",
+      "name": "get_youtube_transcript"
+    }
+  ],
+  "connections": {
+    "get_youtube_transcript": {
+      "ai_tool": [
+        [
+          {
+            "node": "MCP Server Trigger",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
