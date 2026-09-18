@@ -1,14 +1,14 @@
 # YouTube Transcript MCP for n8n
 
-Give Claude Code, Codex, Cursor and Antigravity a tool that reads YouTube transcripts:
-a single video, a whole playlist, or the top results of a YouTube search.
+Give Claude Code, Codex, Grok Build, Cursor and Antigravity a tool that reads YouTube
+transcripts: a single video, a whole playlist, or the top results of a YouTube search.
 
 It runs on **your own n8n**. You need no YouTube API key, no Google account and no paid
 proxy. Requests to YouTube go through a free **Cloudflare WARP** container next to n8n,
 so YouTube doesn't block your server.
 
 ```
-Claude Code / Codex / Cursor / Antigravity
+Claude Code / Codex / Grok Build / Cursor / Antigravity
         │  MCP (streamable HTTP, bearer token)
         ▼
 n8n ─ "YouTube Transcript MCP Server" ─► "YouTube Transcript" workflow
@@ -107,7 +107,7 @@ The script asks for your n8n URL and API key, then:
 3. activates the MCP server,
 4. fetches a test transcript through it, which checks WARP end to end,
 5. connects every AI app it finds on this computer (it asks before changing each one):
-   Claude Code (as a plugin), Codex, Cursor and Antigravity.
+   Claude Code (as a plugin), Codex, Grok Build, Cursor and Antigravity.
 
 At the end it prints the **MCP URL** and **token**, in case you want to connect other apps.
 Restart the apps it configured.
@@ -122,7 +122,7 @@ Running it again is safe. It updates the workflows and replaces the token.
 --api-key <key>        n8n API key (env N8N_API_KEY)
 --proxy <url|none>     default http://warp:1080; "none" for a home connection
 --mcp-base-url <url>   public webhook base URL, if it differs from --n8n-url
---clients <list>       auto (default) | none | claude,codex,cursor,antigravity
+--clients <list>       auto (default) | none | claude,codex,grok,cursor,antigravity
 --yes                  don't ask before writing app configs
 --skip-test            skip the end-to-end test
 --test-video <url>     video for the end-to-end test
@@ -166,6 +166,18 @@ http_headers = { "Authorization" = "Bearer <TOKEN>" }
 tool_timeout_sec = 900
 ```
 
+**Grok Build** (`~/.grok/config.toml`):
+
+```toml
+[mcp_servers.youtube-transcript]
+url = "<URL>"
+headers = { "Authorization" = "Bearer <TOKEN>" }
+tool_timeout_sec = 900
+```
+
+Or: `grok mcp add --transport http youtube-transcript <URL> --header "Authorization: Bearer <TOKEN>"`.
+Grok Build also picks up servers from Claude Code's and Cursor's configs on its own.
+
 **Cursor** (`~/.cursor/mcp.json`):
 
 ```json
@@ -179,10 +191,26 @@ tool_timeout_sec = 900
 }
 ```
 
-**Antigravity** (`~/.gemini/config/mcp_config.json`). This goes through
-[`mcp-remote`](https://github.com/geelen/mcp-remote), because Antigravity's built-in HTTP
-transport has open bugs with bearer headers on n8n endpoints. On Windows use
-`"command": "cmd"` with `"/c", "npx", …` as the first args.
+**Antigravity** (`~/.gemini/config/mcp_config.json`, shared by the app, the IDE and the
+`agy` CLI). Note the key is `serverUrl`, not `url`:
+
+```json
+{
+  "mcpServers": {
+    "youtube-transcript": {
+      "serverUrl": "<URL>",
+      "headers": { "Authorization": "Bearer <TOKEN>" }
+    }
+  }
+}
+```
+
+<details>
+<summary>Older Antigravity versions that don't connect: bridge through mcp-remote</summary>
+
+[`mcp-remote`](https://github.com/geelen/mcp-remote) turns the HTTP server into a local
+one. It needs Node.js. On Windows use `"command": "cmd"` with `"/c", "npx", …` as the
+first args.
 
 ```json
 {
@@ -196,12 +224,18 @@ transport has open bugs with bearer headers on n8n endpoints. On Windows use
 }
 ```
 
+</details>
+
 **Any other MCP client:** streamable HTTP at `<URL>` with the header
 `Authorization: Bearer <TOKEN>`.
 
-> **Why is only Claude Code a real plugin?** Codex, Cursor and Antigravity have plugin
-> formats too, but none of them can hold a personal server URL and token. The setup script
-> writes the server straight into their config instead, which is less work for you.
+> **Why is only Claude Code a real plugin?** Codex, Grok Build, Cursor and Antigravity
+> have plugin formats too, but none of them can hold a personal server URL and token. The
+> setup script writes the server straight into their config instead, which is less work
+> for you.
+
+Tested with Claude Code 2.1.274, Grok Build 1.0.34, Cursor CLI 2026.09.15 and Antigravity
+CLI 1.2.6. The Codex config was checked with the Codex CLI.
 
 ## Using it
 
@@ -276,6 +310,7 @@ YouTube blocks it on a server. The WARP container accepts HTTP and SOCKS5 on por
 | `403 Authorization data is wrong!` | The token in your app is old. Re-run the setup, or paste the current token. |
 | `404` on the MCP URL | The MCP workflow isn't active, or your webhooks run under another public URL. Re-run the setup with `--mcp-base-url https://…`. |
 | Codex times out on playlists | Raise `tool_timeout_sec` in `~/.codex/config.toml`. |
+| Antigravity hangs before answering | It waits until every server in `mcp_config.json` has connected, so one broken server blocks everything. Find it in the `agy` log ("still connecting") and disable it with `agy mcp disable <name>`. |
 | Old `YouTube Transcript MCP Bearer …` credentials pile up | Some n8n versions refuse credential deletes through the API. Delete the unused ones under **Credentials**. |
 | n8n sits behind Cloudflare Access or another login | The `/mcp/…` path must be reachable with just the bearer token, so bypass the login for that path. |
 

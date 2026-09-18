@@ -1,6 +1,6 @@
 ---
 name: setup
-description: Set up, repair or re-key the YouTube Transcript MCP server on the user's own n8n — starts the Cloudflare WARP proxy next to n8n, imports and activates the n8n workflows, and connects Claude Code (plus Codex, Cursor, Antigravity if installed). Use for /youtube-transcript:setup or when the user asks to install, configure, fix or rotate the token of the YouTube transcript tool.
+description: Set up, repair or re-key the YouTube Transcript MCP server on the user's own n8n — starts the Cloudflare WARP proxy next to n8n, imports and activates the n8n workflows, and connects Claude Code (plus Codex, Grok Build, Cursor, Antigravity if installed). Use for /youtube-transcript:setup or when the user asks to install, configure, fix or rotate the token of the YouTube transcript tool.
 ---
 
 # Set up the YouTube Transcript MCP server
@@ -42,8 +42,8 @@ that value as `--proxy` in step 3. A fresh install can use
 
 ## 3. Run the setup script
 
-Tell the user which apps will be configured (Claude Code always; Codex, Cursor
-and Antigravity only if installed), then run it with the API key in the
+Tell the user which apps will be configured (Claude Code always; Codex, Grok Build,
+Cursor and Antigravity only if installed), then run it with the API key in the
 environment, not on the command line:
 
 - bash/zsh:
@@ -62,7 +62,7 @@ and installs this plugin's MCP settings with the new URL and token.
 ## 4. Report
 
 - Success: tell the user to run `/reload-plugins` (or restart Claude Code) so
-  the `youtube-transcript` server connects, and to restart Codex, Cursor or
+  the `youtube-transcript` server connects, and to restart Codex, Grok Build, Cursor or
   Antigravity if the script configured them. The MCP URL and token are in the
   script output; mention that the token is secret.
 - Test failed: the script prints the likely cause. Most often WARP is not

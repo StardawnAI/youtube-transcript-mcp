@@ -4,7 +4,7 @@
 // Imports the two n8n workflows through the n8n public API, wires them
 // together, creates the bearer-token credential, activates the MCP server,
 // tests it end to end and registers it in Claude Code (as a plugin), Codex,
-// Cursor and Antigravity. Safe to re-run: existing workflows are updated in
+// Grok Build, Cursor and Antigravity. Safe to re-run: existing workflows are updated in
 // place and the token is rotated.
 //
 // Usage:
@@ -16,7 +16,7 @@
 //   --proxy <url|none>     Proxy for YouTube requests. Default: http://warp:1080
 //                          Use "none" when n8n runs on a home connection.
 //   --mcp-base-url <url>   Public base URL for webhooks, if it differs from --n8n-url
-//   --clients <list>       auto (default) | none | comma list of: claude,codex,cursor,antigravity
+//   --clients <list>       auto (default) | none | comma list of: claude,codex,grok,cursor,antigravity
 //   --test-video <url>     Video used for the end-to-end test
 //   --skip-test            Do not call the MCP server after setup
 //   --yes                  Do not ask before writing client config files
@@ -39,7 +39,7 @@ const CREDENTIAL_NAME = 'YouTube Transcript MCP Bearer';
 const SERVER_KEY = 'youtube-transcript';
 const MARKETPLACE = 'https://github.com/StardawnAI/youtube-transcript-mcp.git';
 const PLUGIN_ID = 'youtube-transcript@stardawn-ai';
-const ALL_CLIENTS = ['claude', 'codex', 'cursor', 'antigravity'];
+const ALL_CLIENTS = ['claude', 'codex', 'grok', 'cursor', 'antigravity'];
 
 // ---------------------------------------------------------------------------
 // CLI + prompts
@@ -258,14 +258,20 @@ function upsertTomlTable(text, header, bodyLines) {
 }
 
 const home = homedir();
+const exeNames = (cmd) => (process.platform === 'win32' ? [`${cmd}.exe`, `${cmd}.cmd`] : [cmd]);
+
+async function findOnPath(names, extraDirs = []) {
+  const dirs = (process.env.PATH || '').split(process.platform === 'win32' ? ';' : ':').filter(Boolean);
+  for (const dir of [...dirs, ...extraDirs]) for (const name of names) if (await exists(join(dir, name))) return join(dir, name);
+  return null;
+}
 
 // The claude CLI: on PATH, in the native install dirs, or bundled with the
 // VS Code / Cursor extension (newest version wins).
 async function findClaude() {
-  const names = process.platform === 'win32' ? ['claude.exe', 'claude.cmd'] : ['claude'];
-  const dirs = (process.env.PATH || '').split(process.platform === 'win32' ? ';' : ':').filter(Boolean);
-  dirs.push(join(home, '.local', 'bin'), join(home, '.claude', 'local'));
-  for (const dir of dirs) for (const name of names) if (await exists(join(dir, name))) return join(dir, name);
+  const names = exeNames('claude');
+  const found = await findOnPath(names, [join(home, '.local', 'bin'), join(home, '.claude', 'local')]);
+  if (found) return found;
 
   const version = (s) => (s.match(/(\d+)\.(\d+)\.(\d+)/) || [0, 0, 0, 0]).slice(1).map(Number);
   const newer = (a, b) => { const [x, y] = [version(a), version(b)]; return x[0] - y[0] || x[1] - y[1] || x[2] - y[2]; };
@@ -312,6 +318,21 @@ const CLIENTS = {
       await backupAndWrite(this.file, next);
     },
   },
+  grok: {
+    label: 'Grok Build',
+    file: join(process.env.GROK_HOME || join(home, '.grok'), 'config.toml'),
+    detect: async () => (await exists(join(home, '.grok'))) || Boolean(await findOnPath(exeNames('grok'))),
+    async write(url, token) {
+      const text = (await exists(this.file)) ? await readFile(this.file, 'utf8') : '';
+      const next = upsertTomlTable(text, `[mcp_servers.${SERVER_KEY}]`, [
+        `url = ${JSON.stringify(url)}`,
+        `headers = { "Authorization" = ${JSON.stringify(`Bearer ${token}`)} }`,
+        '# playlist and search calls take several minutes',
+        'tool_timeout_sec = 900',
+      ]);
+      await backupAndWrite(this.file, next);
+    },
+  },
   cursor: {
     label: 'Cursor',
     file: join(home, '.cursor', 'mcp.json'),
@@ -327,15 +348,8 @@ const CLIENTS = {
     file: join(home, '.gemini', 'config', 'mcp_config.json'),
     detect: async () => (await exists(join(home, '.gemini', 'antigravity'))) || (await exists(join(home, '.gemini', 'config'))),
     async write(url, token) {
-      // Bridged through mcp-remote: Antigravity's native HTTP transport has
-      // open bugs with bearer headers on n8n MCP endpoints.
-      const bridgeArgs = ['-y', 'mcp-remote@latest', url, '--header', 'Authorization:${AUTH_HEADER}', '--transport', 'http-only'];
-      const entry = process.platform === 'win32'
-        ? { command: 'cmd', args: ['/c', 'npx', ...bridgeArgs] }
-        : { command: 'npx', args: bridgeArgs };
-      entry.env = { AUTH_HEADER: `Bearer ${token}` };
       const cfg = await readJson(this.file);
-      cfg.mcpServers = { ...(cfg.mcpServers || {}), [SERVER_KEY]: entry };
+      cfg.mcpServers = { ...(cfg.mcpServers || {}), [SERVER_KEY]: { serverUrl: url, headers: { Authorization: `Bearer ${token}` } } };
       await backupAndWrite(this.file, JSON.stringify(cfg, null, 2) + '\n');
     },
   },
@@ -348,7 +362,7 @@ async function configureClients(selection, url, token, assumeYes, options) {
   else if (!selection || selection === 'auto') {
     wanted = [];
     for (const key of ALL_CLIENTS) if (await CLIENTS[key].detect()) wanted.push(key);
-    if (!wanted.length) log('  No Claude Code, Codex, Cursor or Antigravity installation found.');
+    if (!wanted.length) log('  No Claude Code, Codex, Grok Build, Cursor or Antigravity installation found.');
   } else {
     wanted = selection.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
     const unknown = wanted.filter((k) => !CLIENTS[k]);
