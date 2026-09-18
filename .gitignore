@@ -5,6 +5,7 @@
 docs/PLAN.md
 docs/STATUS.md
 
+.awg/
 desktop.ini
 node_modules/
 *.bak
