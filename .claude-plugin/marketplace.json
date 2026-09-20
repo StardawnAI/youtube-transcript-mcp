@@ -8,7 +8,7 @@
     {
       "name": "youtube-transcript",
       "source": "./",
-      "description": "YouTube transcripts for videos, playlists and search results, served by your own n8n through a free Cloudflare WARP proxy."
+      "description": "YouTube transcripts for videos, playlists and search results. Runs locally, no API key; free Cloudflare WARP proxy where YouTube blocks the IP."
     }
   ]
 }

@@ -1,14 +1,16 @@
 #!/usr/bin/env node
-// YouTube Transcript MCP — setup
+// YouTube Transcript MCP — optional n8n route (see n8n/README.md)
 //
 // Imports the two n8n workflows through the n8n public API, wires them
 // together, creates the bearer-token credential, activates the MCP server,
-// tests it end to end and registers it in Claude Code (as a plugin), Codex,
-// Grok Build, Cursor and Antigravity. Safe to re-run: existing workflows are updated in
-// place and the token is rotated.
+// tests it end to end and registers the resulting HTTP endpoint in Codex,
+// Grok Build, Cursor and Antigravity. Safe to re-run: existing workflows are
+// updated in place and the token is rotated.
+//
+// Most people want the standalone server instead: it needs no n8n at all.
 //
 // Usage:
-//   node scripts/setup.mjs [options]
+//   node n8n/setup-n8n.mjs [options]
 //
 // Options (all optional; you are prompted for what is missing):
 //   --n8n-url <url>        Base URL of your n8n, e.g. https://n8n.example.com  (env: N8N_URL)
@@ -16,14 +18,12 @@
 //   --proxy <url|none>     Proxy for YouTube requests. Default: http://warp:1080
 //                          Use "none" when n8n runs on a home connection.
 //   --mcp-base-url <url>   Public base URL for webhooks, if it differs from --n8n-url
-//   --clients <list>       auto (default) | none | comma list of: claude,codex,grok,cursor,antigravity
+//   --clients <list>       auto (default) | none | comma list of: codex,grok,cursor,antigravity
 //   --test-video <url>     Video used for the end-to-end test
 //   --skip-test            Do not call the MCP server after setup
 //   --yes                  Do not ask before writing client config files
-//   --marketplace <src>    Claude Code marketplace source (default: the GitHub repo over HTTPS)
 
-import { readFile, writeFile, mkdir, copyFile, access, readdir } from 'node:fs/promises';
-import { spawnSync } from 'node:child_process';
+import { readFile, writeFile, mkdir, copyFile, access } from 'node:fs/promises';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { homedir } from 'node:os';
 import { join, dirname } from 'node:path';
@@ -37,9 +37,7 @@ const TRANSCRIPT_NAME = 'YouTube Transcript';
 const MCP_NAME = 'YouTube Transcript MCP Server';
 const CREDENTIAL_NAME = 'YouTube Transcript MCP Bearer';
 const SERVER_KEY = 'youtube-transcript';
-const MARKETPLACE = 'https://github.com/StardawnAI/youtube-transcript-mcp.git';
-const PLUGIN_ID = 'youtube-transcript@stardawn-ai';
-const ALL_CLIENTS = ['claude', 'codex', 'grok', 'cursor', 'antigravity'];
+const ALL_CLIENTS = ['codex', 'grok', 'cursor', 'antigravity'];
 
 // ---------------------------------------------------------------------------
 // CLI + prompts
@@ -141,7 +139,7 @@ async function activate(api, id) {
 // Workflow templates
 // ---------------------------------------------------------------------------
 async function loadTemplate(file) {
-  const local = join(dirname(fileURLToPath(import.meta.url)), '..', 'n8n', file);
+  const local = join(dirname(fileURLToPath(import.meta.url)), file);
   try {
     return JSON.parse(await readFile(local, 'utf8'));
   } catch {
@@ -266,43 +264,7 @@ async function findOnPath(names, extraDirs = []) {
   return null;
 }
 
-// The claude CLI: on PATH, in the native install dirs, or bundled with the
-// VS Code / Cursor extension (newest version wins).
-async function findClaude() {
-  const names = exeNames('claude');
-  const found = await findOnPath(names, [join(home, '.local', 'bin'), join(home, '.claude', 'local')]);
-  if (found) return found;
-
-  const version = (s) => (s.match(/(\d+)\.(\d+)\.(\d+)/) || [0, 0, 0, 0]).slice(1).map(Number);
-  const newer = (a, b) => { const [x, y] = [version(a), version(b)]; return x[0] - y[0] || x[1] - y[1] || x[2] - y[2]; };
-  for (const extDir of [join(home, '.vscode', 'extensions'), join(home, '.cursor', 'extensions')]) {
-    const entries = await readdir(extDir).catch(() => []);
-    const latest = entries.filter((e) => e.startsWith('anthropic.claude-code-')).sort(newer).pop();
-    const bin = latest && join(extDir, latest, 'resources', 'native-binary', names[0]);
-    if (bin && (await exists(bin))) return bin;
-  }
-  return null;
-}
-
 const CLIENTS = {
-  claude: {
-    label: 'Claude Code',
-    target: `plugin ${PLUGIN_ID}`,
-    detect: async () => Boolean(await findClaude()),
-    async write(url, token, { marketplace }) {
-      const bin = await findClaude();
-      const run = (cmdArgs) => {
-        const r = spawnSync(bin, cmdArgs, { encoding: 'utf8', shell: bin.endsWith('.cmd') });
-        if (r.status !== 0) {
-          const out = `${r.stderr || ''}${r.stdout || ''}`.trim() || r.error?.message || `exit ${r.status}`;
-          throw new Error(`claude ${cmdArgs.slice(0, 3).join(' ')} failed: ${out.split('\n').pop()}`);
-        }
-      };
-      run(['plugin', 'marketplace', 'add', marketplace]);
-      // Installing again on an existing install just updates the options
-      run(['plugin', 'install', PLUGIN_ID, '--config', `mcp_url=${url}`, '--config', `mcp_token=${token}`]);
-    },
-  },
   codex: {
     label: 'Codex (CLI, IDE extension, ChatGPT app)',
     file: join(home, '.codex', 'config.toml'),
@@ -488,27 +450,23 @@ async function main() {
     } catch (e) {
       warn(e.message);
       warn('The workflows are installed, but the test failed. Most common causes:');
-      warn('  • WARP proxy not running or not on the n8n Docker network → run docker/install-warp.sh on the n8n host');
+      warn('  • WARP proxy not running or not on the n8n Docker network → run n8n/docker/install-warp.sh on the n8n host');
       warn('  • n8n on a home connection without WARP → re-run with --proxy none');
       warn('  • n8n webhooks use a different public URL → re-run with --mcp-base-url https://…');
       process.exitCode = 2;
     }
   }
 
-  const configured = await configureClients(args.clients, mcpUrl, token, Boolean(args.yes), {
-    marketplace: args.marketplace || MARKETPLACE,
-  });
+  const configured = await configureClients(args.clients, mcpUrl, token, Boolean(args.yes));
 
   log('\n────────────────────────────────────────────────────────────');
   log('MCP URL:   ' + mcpUrl);
   log('MCP token: ' + token);
   log('Keep the token secret. Re-running setup replaces it.');
   log('────────────────────────────────────────────────────────────');
-  if (!configured.includes('claude')) {
-    log('\nClaude Code (plugin — paste URL and token when asked):');
-    log(`  /plugin marketplace add ${MARKETPLACE}`);
-    log(`  /plugin install ${PLUGIN_ID}`);
-  }
+  log('\nClaude Code:');
+  log(`  claude mcp add --transport http --scope user ${SERVER_KEY} ${mcpUrl} --header "Authorization: Bearer ${token}"`);
+  log('  (the youtube-transcript plugin installs the standalone server instead — do not use both)');
   if (configured.length) log(`\nConfigured: ${configured.join(', ')} — restart those apps to load the server.`);
   log('\nOther MCP clients: streamable HTTP, header "Authorization: Bearer <token>". See README.');
 }

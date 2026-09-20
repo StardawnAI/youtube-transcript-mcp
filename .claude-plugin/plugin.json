@@ -1,7 +1,7 @@
 {
   "name": "youtube-transcript",
-  "version": "1.0.0",
-  "description": "YouTube transcripts for videos, playlists and search results, served by your own n8n through a free Cloudflare WARP proxy.",
+  "version": "2.0.0",
+  "description": "YouTube transcripts for videos, playlists and search results. Runs locally, no API key and no account; falls back to a free Cloudflare WARP proxy where YouTube blocks the IP.",
   "author": {
     "name": "Stardawn AI",
     "url": "https://stardawnai.com"
@@ -9,29 +9,11 @@
   "homepage": "https://github.com/StardawnAI/youtube-transcript-mcp",
   "repository": "https://github.com/StardawnAI/youtube-transcript-mcp",
   "license": "MIT",
-  "keywords": ["youtube", "transcript", "mcp", "n8n", "cloudflare-warp"],
-  "userConfig": {
-    "mcp_url": {
-      "type": "string",
-      "title": "MCP URL",
-      "description": "Printed by the setup script, e.g. https://n8n.example.com/mcp/<id>. Not set up yet? Leave empty and run /youtube-transcript:setup.",
-      "required": false
-    },
-    "mcp_token": {
-      "type": "string",
-      "title": "MCP token",
-      "description": "Bearer token printed by the setup script.",
-      "sensitive": true,
-      "required": false
-    }
-  },
+  "keywords": ["youtube", "transcript", "captions", "mcp", "cloudflare-warp"],
   "mcpServers": {
     "youtube-transcript": {
-      "type": "http",
-      "url": "${user_config.mcp_url}",
-      "headers": {
-        "Authorization": "Bearer ${user_config.mcp_token}"
-      }
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/bin/youtube-transcript-mcp.mjs"]
     }
   }
 }
