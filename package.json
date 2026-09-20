@@ -1,0 +1,39 @@
+{
+  "name": "youtube-transcript-mcp",
+  "version": "2.0.0",
+  "description": "MCP server that reads YouTube transcripts — one video, a whole playlist, or the top search results. No API key, no account; Cloudflare WARP for IPs YouTube blocks.",
+  "type": "module",
+  "bin": {
+    "youtube-transcript-mcp": "bin/youtube-transcript-mcp.mjs"
+  },
+  "exports": {
+    ".": "./src/youtube.mjs"
+  },
+  "files": [
+    "bin",
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "youtube",
+    "transcript",
+    "captions",
+    "cloudflare-warp"
+  ],
+  "homepage": "https://github.com/StardawnAI/youtube-transcript-mcp",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/StardawnAI/youtube-transcript-mcp.git"
+  },
+  "author": "Stardawn AI (https://stardawnai.com)",
+  "license": "MIT"
+}
