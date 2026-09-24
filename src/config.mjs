@@ -28,10 +28,19 @@ export async function writeConfig(patch) {
   return config;
 }
 
+// A proxy somebody chose on purpose: named on the command line or in the
+// environment. Told apart from the one in the config file because they mean
+// different things — this one is somebody else's proxy and is simply used,
+// while the config file only remembers a WARP container this tool started, and
+// that container may have stopped since it was written there.
+export function configuredProxy(cliProxy) {
+  const proxy = cliProxy || process.env.YOUTUBE_TRANSCRIPT_PROXY || process.env.HTTPS_PROXY || process.env.https_proxy;
+  return !proxy || proxy === 'none' ? null : proxy;
+}
+
 // Command line beats environment beats config file.
 export async function resolveProxy(cliProxy) {
-  const fromEnv = process.env.YOUTUBE_TRANSCRIPT_PROXY || process.env.HTTPS_PROXY || process.env.https_proxy;
-  const proxy = cliProxy || fromEnv || (await readConfig()).proxy || null;
+  const proxy = configuredProxy(cliProxy) || (await readConfig()).proxy || null;
   if (!proxy || proxy === 'none') return null;
   return proxy;
 }
