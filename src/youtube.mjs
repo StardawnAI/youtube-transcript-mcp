@@ -205,23 +205,91 @@ export async function searchVideoIds(query, limit, options) {
   return ids.slice(0, limit);
 }
 
-// Several videos, one after another. A failed video is reported, not fatal.
-export async function getTranscripts(videoIds, { onProgress, delayMs = 0, ...options } = {}) {
-  const videos = [];
-  for (const [index, videoId] of videoIds.entries()) {
-    if (index > 0 && delayMs) await new Promise((r) => setTimeout(r, delayMs));
-    onProgress?.(index + 1, videoIds.length, videoId);
-    try {
-      videos.push(await getTranscript(videoId, options));
-    } catch (e) {
-      if (e instanceof BlockedError && !videos.length) throw e; // blocked from the start: no point continuing
-      videos.push({ videoId, url: `https://www.youtube.com/watch?v=${videoId}`, skipped: true, reason: e.message });
+const BLOCKS_IN_A_ROW = 3;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Several videos, `concurrency` at a time. A video that fails is reported, not
+// fatal.
+//
+// A block in the middle of a run is not the end of it: `onBlocked` may hand back
+// a better proxy (Cloudflare WARP), and the run continues with the videos that
+// are left instead of starting over. If the block stays anyway, the run stops
+// after a few in a row — hammering a service that has said no only makes the
+// next attempt worse — and reports what it got.
+//
+// `onVideo` gets every finished video (also skipped ones) the moment it is done,
+// so the caller can write it to disk while the rest is still running.
+export async function getTranscripts(videoIds, { onProgress, onVideo, onBlocked, delayMs = 0, concurrency = 1, fetcher = getTranscript, ...options } = {}) {
+  const urlOf = (videoId) => `https://www.youtube.com/watch?v=${videoId}`;
+  const videos = new Array(videoIds.length);
+  let proxy = options.proxy;
+  let cursor = 0;
+  let finished = 0;
+  let blocksInARow = 0;
+  let halted = null;
+  let rerouting = null;
+
+  // Parallel workers that hit the block together ask for the new route once.
+  const reroute = () => {
+    rerouting ??= Promise.resolve(onBlocked?.())
+      .then((next) => { if (next) proxy = next; return next; })
+      .finally(() => { rerouting = null; });
+    return rerouting;
+  };
+
+  async function fetchOne(videoId) {
+    for (let tries = 0; ; tries++) {
+      const used = proxy;
+      try {
+        return await fetcher(videoId, { ...options, proxy: used });
+      } catch (e) {
+        if (!(e instanceof BlockedError) || tries >= 2) throw e;
+        // The route may have changed while this request was in flight
+        if (proxy === used && !(await reroute())) throw e;
+      }
+    }
+  }
+
+  async function worker() {
+    for (let first = true; !halted; first = false) {
+      const index = cursor++;
+      if (index >= videoIds.length) return;
+      const videoId = videoIds[index];
+      if (!first && delayMs) await sleep(delayMs);
+
+      let video;
+      let blocked = false;
+      try {
+        video = await fetchOne(videoId);
+        blocksInARow = 0;
+      } catch (e) {
+        blocked = e instanceof BlockedError;
+        blocksInARow = blocked ? blocksInARow + 1 : 0;
+        video = { videoId, url: urlOf(videoId), skipped: true, reason: e.message };
+        if (blocksInARow >= BLOCKS_IN_A_ROW) {
+          halted = `YouTube kept refusing requests (${blocksInARow} videos in a row): ${e.message}`;
+        }
+      }
+      videos[index] = video;
+      finished++;
+      onProgress?.(finished, videoIds.length, videoId);
+      await onVideo?.(video, index);
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(concurrency, videoIds.length)) }, worker));
+
+  if (halted) {
+    if (!videos.some((v) => v && !v.skipped)) throw new BlockedError(halted);
+    for (const [index, videoId] of videoIds.entries()) {
+      videos[index] ??= { videoId, url: urlOf(videoId), skipped: true, reason: 'not attempted — the run was stopped' };
     }
   }
   return {
     totalVideos: videos.length,
     successful: videos.filter((v) => !v.skipped).length,
     skipped: videos.filter((v) => v.skipped).length,
+    ...(halted ? { stoppedEarly: halted } : {}),
     videos,
   };
 }

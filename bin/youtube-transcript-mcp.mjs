@@ -4,11 +4,11 @@
 //   youtube-transcript-mcp                 run the MCP server (stdio; this is what AI apps start)
 //   youtube-transcript-mcp connect [apps]  register the server in Claude Code, Codex, Grok Build, Cursor, Antigravity
 //   youtube-transcript-mcp doctor          check whether YouTube answers from this machine
-//   youtube-transcript-mcp warp <start|stop|status>   Cloudflare WARP proxy, for IPs YouTube blocks
-//   youtube-transcript-mcp transcript <url|search> [--type video|playlist|search] [--text]
+//   youtube-transcript-mcp warp <start|stop|status>   Cloudflare WARP proxy (starts by itself for runs of many videos)
+//   youtube-transcript-mcp transcript <url|search> [--type video|playlist|search] [--save-to dir] [--text]
 import { fileURLToPath } from 'node:url';
-import { serve, VERSION } from '../src/mcp-server.mjs';
-import { BlockedError, getTranscript, getTranscripts, parsePlaylistId, parseVideoId, playlistVideoIds, searchVideoIds } from '../src/youtube.mjs';
+import { runTool, serve, VERSION } from '../src/mcp-server.mjs';
+import { BlockedError, getTranscript } from '../src/youtube.mjs';
 import { CONFIG_FILE, resolveProxy } from '../src/config.mjs';
 import { checkProxy, dockerAvailable, start as warpStart, status as warpStatus, stop as warpStop } from '../src/warp.mjs';
 import { connect, detectClients, serverCommand } from '../src/connect.mjs';
@@ -102,29 +102,21 @@ async function doConnect(apps) {
   log(`\nAny other MCP client: command ${JSON.stringify(command)}, args ${JSON.stringify(args)}`);
 }
 
+// The same code path as the MCP tool: routing, WARP, files for playlists and searches.
 async function transcript(target) {
-  if (!target) fail('Usage: youtube-transcript-mcp transcript <url|video id|search phrase> [--type video|playlist|search]');
-  const proxy = await resolveProxy(flags.proxy);
-  const type = flags.type || (parsePlaylistId(target) && !parseVideoId(target) ? 'playlist' : parseVideoId(target) ? 'video' : 'search');
-  const includeSegments = !flags.text && type === 'video';
+  if (!target) fail('Usage: youtube-transcript-mcp transcript <url|video id|search phrase> [--type video|playlist|search] [--language en] [--max-videos 25] [--save-to dir] [--proxy http://…] [--text]');
+  if (flags.proxy) process.env.YOUTUBE_TRANSCRIPT_PROXY = flags.proxy;
+  const result = await runTool({
+    youtube_url: target,
+    url_type: flags.type,
+    language: flags.language,
+    max_videos: Number(flags['max-videos']) || undefined,
+    save_to: flags['save-to'],
+    include_segments: !flags.text,
+  }, { notify: (message) => console.error(message) });
 
-  let result;
-  if (type === 'video') {
-    result = await getTranscript(parseVideoId(target), { proxy, language: flags.language, includeSegments });
-  } else {
-    const ids = type === 'playlist'
-      ? await playlistVideoIds(parsePlaylistId(target), Number(flags['max-videos']) || 25, { proxy })
-      : await searchVideoIds(target, Number(flags['max-videos']) || 10, { proxy });
-    console.error(`${ids.length} videos …`);
-    result = await getTranscripts(ids, {
-      proxy, language: flags.language, includeSegments, delayMs: 1500,
-      onProgress: (done, total, id) => console.error(`  ${done}/${total} ${id}`),
-    });
-  }
-
-  if (!flags.text) return log(JSON.stringify(result, null, 2));
-  const videos = result.videos || [result];
-  for (const v of videos) log(v.skipped ? `--- ${v.videoId}: skipped (${v.reason})` : `--- ${v.title || v.videoId}\n${v.fullText}\n`);
+  if (flags.text && !result.videos) return log(`--- ${result.title}\n${result.fullText}`);
+  log(JSON.stringify(result, null, 2));
 }
 
 const [command, ...rest] = positional;

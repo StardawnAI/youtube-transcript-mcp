@@ -1,6 +1,6 @@
 ---
 name: setup
-description: Check or repair the YouTube transcript tool — test whether YouTube answers from this machine, start the free Cloudflare WARP proxy when the IP is blocked, and register the server in Codex, Grok Build, Cursor or Antigravity. Use for /youtube-transcript:setup, when transcripts fail with a bot check, or when the user wants the tool in their other AI apps.
+description: Check or repair the YouTube transcript tool — test whether YouTube answers from this machine, check or start the free Cloudflare WARP proxy, and register the server in Codex, Grok Build, Cursor or Antigravity. Use for /youtube-transcript:setup, when transcripts fail with a bot check or a Docker message, or when the user wants the tool in their other AI apps.
 ---
 
 # YouTube transcript tool — checks and setup
@@ -21,20 +21,21 @@ Run `doctor`. It prints the Node version, the proxy in use, whether a test trans
 comes through, and which AI apps it found on this machine. Read its output before
 changing anything.
 
-## YouTube blocks this machine
+## Cloudflare WARP and Docker
 
-`doctor` says so explicitly. This happens on cloud servers, CI runners and some VPNs, not
-usually on a home connection.
+Playlists and searches read many videos, and YouTube refuses a plain IP after a handful in
+a row. So the server sends them through Cloudflare WARP, a free proxy in a Docker container
+that it starts by itself. A single video goes out directly and only uses WARP when it is
+blocked. On cloud servers, CI runners and some VPNs the block starts at the first request.
 
-- Docker available → run `warp start`. It starts a free Cloudflare WARP container
-  (no account needed), waits for the tunnel and stores the proxy. The running MCP server
-  picks it up on the next call; no restart needed.
-- No Docker → the user needs an HTTP proxy of their own, set as the environment variable
-  `YOUTUBE_TRANSCRIPT_PROXY`. SOCKS proxies are not supported.
-- `warp status` shows whether the tunnel is up, `warp stop` removes the container.
-
-The server also starts WARP on its own the first time a request is blocked, so in many
-cases the user only needs to try again.
+- `warp status` shows whether the container runs and whether traffic really leaves through
+  Cloudflare. A container that runs but reports "not tunnelling" is broken; `warp start`
+  restarts it.
+- `warp start` brings it up ahead of time, `warp stop` removes it.
+- Docker is not running → ask the user to start Docker Desktop. Nothing else has to be
+  installed. Without Docker a single video still works on most home connections.
+- The user has an HTTP proxy of their own → set it as `YOUTUBE_TRANSCRIPT_PROXY`. The server
+  then uses it as given and never starts WARP. SOCKS proxies are not supported.
 
 ## Add the tool to the user's other AI apps
 
@@ -45,7 +46,8 @@ that they need to restart those apps afterwards.
 
 ## Other things this CLI can do
 
-- `transcript <url|search phrase> [--text] [--language de] [--max-videos 5]` fetches a
-  transcript without going through the MCP tool — useful to prove the tool itself works.
+- `transcript <url|search phrase> [--text] [--language de] [--max-videos 5] [--save-to dir]`
+  runs the same code as the MCP tool from the terminal — useful to prove the tool itself
+  works.
 - Prefer running everything inside n8n instead? That route lives in `n8n/README.md` of
   the plugin directory; it is a different setup and does not use this plugin's server.
