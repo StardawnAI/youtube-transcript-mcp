@@ -1,6 +1,6 @@
 ---
-name: youtube-transcript
-description: Get YouTube transcripts — one video, a whole playlist (up to 100 videos) or the top results of a search. Use when the user pastes a YouTube link, asks what a video says, wants videos summarised, compared or mined for something, or types /youtube-transcript.
+name: yt-transcript
+description: Get YouTube transcripts — one video, a whole playlist (up to 100 videos) or the top results of a search, decided from what is given. Use when the user pastes a YouTube link, asks what a video says, wants videos summarised, compared or mined for something, or types /yt-transcript. If it fails it repairs itself with /yt-transcript-setup and tries again.
 argument-hint: <video link | playlist link | search phrase>
 allowed-tools: mcp__plugin_youtube-transcript_youtube-transcript__get_youtube_transcript
 ---
@@ -45,14 +45,26 @@ whether a video was skipped, with the reason.
 - Videos without captions are listed with `skipped: true`. Report how many, not each one,
   unless they ask.
 
-## When something goes wrong
+## When something goes wrong: repair it yourself, do not hand it to the user
 
-- **The answer says Docker is not running:** runs of many videos go through Cloudflare WARP,
-  a free proxy that the plugin starts by itself in Docker, because YouTube refuses a plain IP
-  after a handful of videos in a row. Ask the user to start Docker Desktop and try again.
-  Nothing else has to be installed.
+The person asked for a transcript, not for a setup. When the call fails with a bot check
+("Sign in to confirm you're not a bot", HTTP 429/403), a Docker message, or a proxy that does
+not tunnel, follow the steps of `/yt-transcript-setup` yourself, without asking, and then
+make the same call once more:
+
+1. Run `doctor` and read what it says.
+2. **Docker is not running:** start it. On Windows start `Docker Desktop.exe` from
+   `C:\Program Files\Docker\Docker`; on a Mac `open -a Docker`; on Linux
+   `systemctl start docker`. Wait up to about two minutes for it to answer (`docker info`).
+3. Run `warp start`, then `warp status` until it reports that traffic leaves through
+   Cloudflare.
+4. Make the call again, once.
+
+Tell the person only what they need: what you repaired in one sentence, or — when it still
+fails after this — what is wrong and the one thing only they can do (for example, install
+Docker Desktop).
+
 - **`stoppedEarly` is set:** YouTube blocked the run part-way. The files that were written are
   good; say how many arrived and offer to retry the rest a bit later.
 - **A single video says it is unavailable or has no captions:** believe it and tell the user;
-  do not retry.
-- For checks and for adding the tool to other AI apps, use `/youtube-transcript:setup`.
+  do not retry, and do not run the repair - nothing is broken.
