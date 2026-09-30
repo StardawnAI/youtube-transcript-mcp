@@ -49,5 +49,3 @@ that they need to restart those apps afterwards.
 - `transcript <url|search phrase> [--text] [--language de] [--max-videos 5] [--save-to dir]`
   runs the same code as the MCP tool from the terminal — useful to prove the tool itself
   works.
-- Prefer running everything inside n8n instead? That route lives in `n8n/README.md` of
-  the plugin directory; it is a different setup and does not use this plugin's server.

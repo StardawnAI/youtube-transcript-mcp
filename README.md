@@ -201,12 +201,6 @@ youtube-transcript-mcp transcript "<playlist url>" --max-videos 100 --save-to ./
   except to YouTube.
 - Use it in line with YouTube's Terms of Service and the creators' rights.
 
-## Prefer to run it in n8n?
-
-The same thing also exists as two n8n workflows, with WARP as a container next to n8n:
-[`n8n/README.md`](n8n/README.md). You only want this if the transcripts should feed other
-n8n automations — for using it in an AI app, the server above is simpler.
-
 ## Development
 
 ```bash

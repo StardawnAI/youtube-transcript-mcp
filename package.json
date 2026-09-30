@@ -1,6 +1,6 @@
 {
   "name": "youtube-transcript-mcp",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "MCP server that reads YouTube transcripts — one video, a whole playlist, or the top search results. No API key, no account; Cloudflare WARP, started automatically, for runs of many videos and IPs YouTube blocks.",
   "type": "module",
   "bin": {

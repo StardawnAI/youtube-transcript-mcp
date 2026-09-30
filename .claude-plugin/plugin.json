@@ -1,6 +1,6 @@
 {
   "name": "youtube-transcript",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "YouTube transcripts for videos, playlists and search results. Runs locally, no API key and no account. Playlists and searches go out through a free Cloudflare WARP proxy that the plugin starts itself (needs Docker), because YouTube blocks a plain IP after a few videos.",
   "author": {
     "name": "Stardawn AI",
