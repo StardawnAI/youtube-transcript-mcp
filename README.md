@@ -33,9 +33,9 @@ single video still works on a normal home connection.
 That's it — the plugin brings the server with it. Nothing else to configure. Then, in Claude Code:
 
 ```
-/youtube-transcript https://youtu.be/jNQXAC9IVRw                   one video
-/youtube-transcript https://www.youtube.com/playlist?list=PL…      a playlist, up to 100 videos
-/youtube-transcript claude code tips                                the top search results
+/yt-transcript https://youtu.be/jNQXAC9IVRw                        one video
+/yt-transcript https://www.youtube.com/playlist?list=PL…           a playlist, up to 100 videos
+/yt-transcript claude code tips                                     the top search results
 ```
 
 You can also just paste a link and ask about it; Claude picks the tool up on its own.

@@ -1,13 +1,14 @@
 ---
-name: setup
-description: Check or repair the YouTube transcript tool — test whether YouTube answers from this machine, check or start the free Cloudflare WARP proxy, and register the server in Codex, Grok Build, Cursor or Antigravity. Use for /youtube-transcript:setup, when transcripts fail with a bot check or a Docker message, or when the user wants the tool in their other AI apps.
+name: yt-transcript-setup
+description: Check or repair the YouTube transcript tool — test whether YouTube answers from this machine, check or start the free Cloudflare WARP proxy (and Docker for it), and register the server in Codex, Grok Build, Cursor or Antigravity. Use for /yt-transcript-setup, when transcripts fail with a bot check or a Docker message (/yt-transcript runs these steps by itself), or when the user wants the tool in their other AI apps.
 ---
 
 # YouTube transcript tool — checks and setup
 
 The plugin already ships the MCP server and starts it itself, so nothing needs to be
-installed for Claude Code. This skill is for the two things left over: a blocked IP, and
-the user's other AI apps.
+installed for Claude Code. This skill is for the things left over: a blocked IP, Docker
+that is not running, and the user's other AI apps. `/yt-transcript` follows the first two
+steps below on its own when a transcript fails; the person does not have to ask for it.
 
 The command below is the server's own CLI:
 
@@ -32,8 +33,11 @@ blocked. On cloud servers, CI runners and some VPNs the block starts at the firs
   Cloudflare. A container that runs but reports "not tunnelling" is broken; `warp start`
   restarts it.
 - `warp start` brings it up ahead of time, `warp stop` removes it.
-- Docker is not running → ask the user to start Docker Desktop. Nothing else has to be
-  installed. Without Docker a single video still works on most home connections.
+- **Docker is not running → start it yourself**: on Windows `Docker Desktop.exe` from
+  `C:\Program Files\Docker\Docker`, on a Mac `open -a Docker`, on Linux
+  `systemctl start docker`; wait up to two minutes until `docker info` answers. Only when
+  Docker is not installed at all is there something the person has to do: install Docker
+  Desktop. Without Docker a single video still works on most home connections.
 - The user has an HTTP proxy of their own → set it as `YOUTUBE_TRANSCRIPT_PROXY`. The server
   then uses it as given and never starts WARP. SOCKS proxies are not supported.
 
