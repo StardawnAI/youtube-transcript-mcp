@@ -1,13 +1,13 @@
 ---
-name: yt-transcript-setup
-description: Check or repair the YouTube transcript tool — test whether YouTube answers from this machine, check or start the free Cloudflare WARP proxy (and Docker for it), and register the server in Codex, Grok Build, Cursor or Antigravity. Use for /yt-transcript-setup, when transcripts fail with a bot check or a Docker message (/yt-transcript runs these steps by itself), or when the user wants the tool in their other AI apps.
+name: awg-yt-transcript-setup
+description: Check or repair the YouTube transcript tool — test whether YouTube answers from this machine, check or start the free Cloudflare WARP proxy (and Docker for it), and register the server in Codex, Grok Build, Cursor or Antigravity. Use for /awg-yt-transcript-setup, when transcripts fail with a bot check or a Docker message (/awg-yt-transcript runs these steps by itself), or when the user wants the tool in their other AI apps.
 ---
 
 # YouTube transcript tool — checks and setup
 
 The plugin already ships the MCP server and starts it itself, so nothing needs to be
 installed for Claude Code. This skill is for the things left over: a blocked IP, Docker
-that is not running, and the user's other AI apps. `/yt-transcript` follows the first two
+that is not running, and the user's other AI apps. `/awg-yt-transcript` follows the first two
 steps below on its own when a transcript fails; the person does not have to ask for it.
 
 The command below is the server's own CLI:

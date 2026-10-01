@@ -1,8 +1,8 @@
 ---
-name: yt-transcript
-description: Get YouTube transcripts — one video, a whole playlist (up to 100 videos) or the top results of a search, decided from what is given. Use when the user pastes a YouTube link, asks what a video says, wants videos summarised, compared or mined for something, or types /yt-transcript. If it fails it repairs itself with /yt-transcript-setup and tries again.
+name: awg-yt-transcript
+description: Get YouTube transcripts — one video, a whole playlist (up to 100 videos) or the top results of a search, decided from what is given. Use when the user pastes a YouTube link, asks what a video says, wants videos summarised, compared or mined for something, or types /awg-yt-transcript. If it fails it repairs itself with /awg-yt-transcript-setup and tries again.
 argument-hint: <video link | playlist link | search phrase>
-allowed-tools: mcp__plugin_youtube-transcript_youtube-transcript__get_youtube_transcript
+allowed-tools: mcp__plugin_awg-youtube-transcript_youtube-transcript__get_youtube_transcript
 ---
 
 # YouTube transcripts
@@ -49,7 +49,7 @@ whether a video was skipped, with the reason.
 
 The person asked for a transcript, not for a setup. When the call fails with a bot check
 ("Sign in to confirm you're not a bot", HTTP 429/403), a Docker message, or a proxy that does
-not tunnel, follow the steps of `/yt-transcript-setup` yourself, without asking, and then
+not tunnel, follow the steps of `/awg-yt-transcript-setup` yourself, without asking, and then
 make the same call once more:
 
 1. Run `doctor` and read what it says.

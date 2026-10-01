@@ -27,15 +27,15 @@ single video still works on a normal home connection.
 
 ```
 /plugin marketplace add https://github.com/StardawnAI/youtube-transcript-mcp.git
-/plugin install youtube-transcript@stardawn-ai
+/plugin install awg-youtube-transcript@stardawn-ai
 ```
 
 That's it — the plugin brings the server with it. Nothing else to configure. Then, in Claude Code:
 
 ```
-/yt-transcript https://youtu.be/jNQXAC9IVRw                        one video
-/yt-transcript https://www.youtube.com/playlist?list=PL…           a playlist, up to 100 videos
-/yt-transcript claude code tips                                     the top search results
+/awg-yt-transcript https://youtu.be/jNQXAC9IVRw                        one video
+/awg-yt-transcript https://www.youtube.com/playlist?list=PL…           a playlist, up to 100 videos
+/awg-yt-transcript claude code tips                                     the top search results
 ```
 
 You can also just paste a link and ask about it; Claude picks the tool up on its own.

@@ -7,7 +7,7 @@ import { join, dirname } from 'node:path';
 
 const SERVER_KEY = 'youtube-transcript';
 const MARKETPLACE = 'https://github.com/StardawnAI/youtube-transcript-mcp.git';
-const PLUGIN_ID = 'youtube-transcript@stardawn-ai';
+const PLUGIN_ID = 'awg-youtube-transcript@stardawn-ai';
 const home = homedir();
 
 const exists = (p) => access(p).then(() => true, () => false);

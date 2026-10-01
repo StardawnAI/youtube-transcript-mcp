@@ -6,7 +6,7 @@
   },
   "plugins": [
     {
-      "name": "youtube-transcript",
+      "name": "awg-youtube-transcript",
       "source": "./",
       "description": "YouTube transcripts for videos, playlists and search results. Runs locally, no API key; playlists and searches go through a free Cloudflare WARP proxy started automatically."
     }
