@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { saveTranscripts } from '../src/mcp-server.mjs';
+import { collectTranscripts, saveTranscripts, toolFor } from '../src/mcp-server.mjs';
 import { BlockedError, getTranscripts } from '../src/youtube.mjs';
 
 const ids = (n) => Array.from({ length: n }, (_, i) => `video${String(i).padStart(6, '0')}`);
@@ -105,4 +105,49 @@ test('saveTranscripts writes one file per video and answers with an index, not t
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+// ---------------------------------------------------------------------------
+// Inline mode: the answer carries the text, in portions, for a server that
+// cannot leave files behind.
+// ---------------------------------------------------------------------------
+test('inline: stops at the budget and says where to continue', async () => {
+  const fetcher = async (videoId) => ok(videoId);
+  const result = await collectTranscripts(ids(12), { route: { proxy: null }, fetcher, budget: 40, offset: 10 });
+  assert.equal(result.videos.length, 3); // one batch of three is already past 40 characters
+  assert.equal(result.nextOffset, 13);
+  assert.equal(result.remainingInThisRequest, 9);
+  assert.ok(result.videos.every((v) => typeof v.fullText === 'string' && v.segments === undefined && v.channelId === undefined));
+});
+
+test('inline: a request that fits in the budget has no nextOffset', async () => {
+  const result = await collectTranscripts(ids(5), { route: { proxy: null }, fetcher: async (id) => ok(id), budget: 100000 });
+  assert.equal(result.successful, 5);
+  assert.equal(result.nextOffset, undefined);
+});
+
+test('inline: a block after the first portion returns what was read, a block at the start throws', async () => {
+  const late = async (videoId) => {
+    if (videoId >= ids(12)[3]) throw new BlockedError('blocked');
+    return ok(videoId);
+  };
+  const result = await collectTranscripts(ids(12), { route: { proxy: null }, fetcher: late, budget: 100000 });
+  assert.equal(result.successful, 3);
+  assert.match(result.stoppedEarly, /kept refusing/);
+  assert.equal(result.nextOffset, undefined); // nothing sensible to continue with while blocked
+
+  await assert.rejects(
+    collectTranscripts(ids(6), { route: { proxy: null }, fetcher: async () => { throw new BlockedError('blocked'); }, budget: 100000 }),
+    BlockedError,
+  );
+});
+
+test('the tool description follows the output mode: no save_to for a server that answers inline', () => {
+  const files = toolFor('files');
+  const inline = toolFor('inline');
+  assert.ok(files.inputSchema.properties.save_to);
+  assert.equal(inline.inputSchema.properties.save_to, undefined);
+  assert.ok(inline.inputSchema.properties.offset && files.inputSchema.properties.offset);
+  assert.match(inline.description, /nextOffset/);
+  assert.match(files.description, /written to files/);
 });
