@@ -10,3 +10,6 @@ desktop.ini
 node_modules/
 *.bak
 .env
+
+# crash dumps of the shell
+*.stackdump
