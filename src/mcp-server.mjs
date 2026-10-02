@@ -7,37 +7,52 @@ import { BlockedError, getTranscript, getTranscripts, parsePlaylistId, parseVide
 import { configuredProxy, readConfig } from './config.mjs';
 import { dockerAvailable, start as startWarp } from './warp.mjs';
 
-export const VERSION = '2.1.0';
+export const VERSION = '2.4.0';
 const PROTOCOL = '2025-06-18';
 const DELAY_MS = Number(process.env.YOUTUBE_TRANSCRIPT_DELAY_MS || 1000);
 const CONCURRENCY = Number(process.env.YOUTUBE_TRANSCRIPT_CONCURRENCY || 3);
 const DEFAULT_SAVE_DIR = 'yt_transcripts';
+const INLINE_CHARS = 100000;
 
-const TOOL = {
-  name: 'get_youtube_transcript',
-  description: `Read YouTube transcripts: one video, a playlist, or the top results of a YouTube search.
+// Where the transcripts of a playlist or a search go. "files" suits a server on
+// the user's own machine: one file per video, and an index as the answer. A
+// server that runs somewhere else — the AWG hub, for the Claude web app and
+// every other client — cannot hand over files, so it answers with the text
+// itself, a portion at a time, and `offset` continues. The hub's database
+// entry sets YOUTUBE_TRANSCRIPT_OUTPUT=inline.
+const outputMode = (deps = {}) => ((deps.output ?? process.env.YOUTUBE_TRANSCRIPT_OUTPUT) === 'inline' ? 'inline' : 'files');
+
+export function toolFor(mode = outputMode()) {
+  const inline = mode === 'inline';
+  const bulk = inline
+    ? `A playlist or a search reads many videos. The transcripts come back in the answer, about ${INLINE_CHARS.toLocaleString('en-US')} characters at a time: when more of the requested videos remain, the answer has nextOffset — call again with offset set to it to continue. Runs`
+    : `A playlist or a search reads many videos, so the transcripts are written to files (one <videoId>.txt each, in save_to, default ./${DEFAULT_SAVE_DIR}) and the answer is an index with title, author and length per video. Read the files you need afterwards. Runs`;
+  const properties = {
+    youtube_url: { type: 'string', description: 'Video URL, playlist URL, video ID, or a search phrase when url_type is "search".' },
+    url_type: { type: 'string', enum: ['video', 'playlist', 'search'], description: 'Defaults to "video".' },
+    language: { type: 'string', description: 'Preferred caption language, e.g. "en" or "de". Defaults to the video\'s own captions.' },
+    max_videos: { type: 'integer', minimum: 1, maximum: 100, description: 'For playlist (default 25, up to 100) and search (default 10, up to 20).' },
+    offset: { type: 'integer', minimum: 0, description: 'Playlist and search only: start at this position in the list instead of the first video. Used to continue after nextOffset.' },
+    include_segments: { type: 'boolean', description: 'Single video only: timestamped segments. Default true.' },
+  };
+  if (!inline) {
+    properties.save_to = { type: 'string', description: `Playlist and search only: the directory for the transcript files. Relative paths start at the working directory. Default ./${DEFAULT_SAVE_DIR}.` };
+  }
+  return {
+    name: 'get_youtube_transcript',
+    description: `Read YouTube transcripts: one video, a playlist, or the top results of a YouTube search.
 
 url_type:
 - "video" (default): youtube_url is a video link (watch?v=…, youtu.be/…, shorts/…, live/…) or a bare video ID. The transcript comes back in the answer.
 - "playlist": youtube_url is a playlist link (contains list=). Reads the first 100 videos of the playlist at most.
 - "search": youtube_url is a SEARCH PHRASE, not a link. Reads the top results (about 20 at most).
 
-A playlist or a search reads many videos, so the transcripts are written to files (one <videoId>.txt each, in save_to, default ./${DEFAULT_SAVE_DIR}) and the answer is an index with title, author and length per video. Read the files you need afterwards. Runs of many videos go through Cloudflare WARP automatically, because YouTube refuses a plain IP after a handful in a row; a run of 100 videos takes several minutes. Videos without captions are listed with skipped: true and a reason.
+${bulk} of many videos go through Cloudflare WARP, because YouTube refuses a plain IP after a handful in a row; a run of 100 videos takes one to a few minutes. Videos without captions are listed with skipped: true and a reason.
 
 If a link contains a list= parameter, ask the user whether they mean the single video or the whole playlist instead of guessing.`,
-  inputSchema: {
-    type: 'object',
-    properties: {
-      youtube_url: { type: 'string', description: 'Video URL, playlist URL, video ID, or a search phrase when url_type is "search".' },
-      url_type: { type: 'string', enum: ['video', 'playlist', 'search'], description: 'Defaults to "video".' },
-      language: { type: 'string', description: 'Preferred caption language, e.g. "en" or "de". Defaults to the video\'s own captions.' },
-      max_videos: { type: 'integer', minimum: 1, maximum: 100, description: 'For playlist (default 25, up to 100) and search (default 10, up to 20).' },
-      include_segments: { type: 'boolean', description: 'Single video only: timestamped segments. Default true.' },
-      save_to: { type: 'string', description: `Playlist and search only: the directory for the transcript files. Relative paths start at the working directory. Default ./${DEFAULT_SAVE_DIR}.` },
-    },
-    required: ['youtube_url'],
-  },
-};
+    inputSchema: { type: 'object', properties, required: ['youtube_url'] },
+  };
+}
 
 function detectType(input, given) {
   if (given) return given;
@@ -134,6 +149,49 @@ export async function saveTranscripts(videoIds, { dir, route, onBlocked, languag
   return { ...summary, savedTo: dir, files: '<videoId>.txt', videos: videos.map((v, position) => index[position] ?? v) };
 }
 
+// The same run for a server that cannot leave files behind: the transcripts come
+// back in the answer, in batches, until about `budget` characters are in. The
+// videos that were not reached are left for a second call, which starts at
+// `nextOffset`.
+export async function collectTranscripts(videoIds, { route, onBlocked, language, notify = () => {}, fetcher, budget = INLINE_CHARS, offset = 0 }) {
+  const videos = [];
+  let characters = 0;
+  let next = 0;
+  let stoppedEarly;
+
+  while (next < videoIds.length && characters < budget) {
+    const batch = videoIds.slice(next, next + CONCURRENCY);
+    let part;
+    try {
+      part = await getTranscripts(batch, {
+        proxy: route.proxy, language, includeSegments: false, delayMs: DELAY_MS, concurrency: CONCURRENCY, onBlocked, fetcher,
+        onProgress: (done, _total, videoId) => notify(`transcript ${next + done}/${videoIds.length} (${videoId})`, next + done, videoIds.length),
+      });
+    } catch (e) {
+      if (!(e instanceof BlockedError) || !videos.length) throw e;
+      stoppedEarly = e.message;
+      break;
+    }
+    for (const video of part.videos) {
+      if (video.skipped) { videos.push(video); continue; }
+      const { segments, availableLanguages, channelId, url, totalSegments, ...meta } = video;
+      characters += video.fullText.length;
+      videos.push(meta);
+    }
+    next += batch.length;
+    if (part.stoppedEarly) { stoppedEarly = part.stoppedEarly; break; }
+  }
+
+  return {
+    totalVideos: videos.length,
+    successful: videos.filter((v) => !v.skipped).length,
+    skipped: videos.filter((v) => v.skipped).length,
+    ...(next < videoIds.length && !stoppedEarly ? { nextOffset: offset + next, remainingInThisRequest: videoIds.length - next } : {}),
+    ...(stoppedEarly ? { stoppedEarly } : {}),
+    videos,
+  };
+}
+
 // The tool itself; the command line uses it too.
 export async function runTool(args, { notify = () => {} } = {}, deps = {}) {
   const input = String(args.youtube_url || '').trim();
@@ -147,16 +205,21 @@ export async function runTool(args, { notify = () => {} } = {}, deps = {}) {
     return withRoute((route) => getTranscript(videoId, { proxy: route.proxy, language, includeSegments: args.include_segments ?? true }), { notify }, deps);
   }
 
+  const inline = outputMode(deps) === 'inline';
+  const offset = args.offset || 0;
   const dir = resolveDir(args.save_to || DEFAULT_SAVE_DIR);
   return withRoute(async (route, onBlocked) => {
-    let videoIds;
+    let list;
     if (type === 'playlist') {
       const playlistId = parsePlaylistId(input);
       if (!playlistId) throw new Error(`No playlist ID in "${input}" — a playlist URL contains "list=".`);
-      videoIds = await playlistVideoIds(playlistId, args.max_videos || 25, { proxy: route.proxy });
+      list = await playlistVideoIds(playlistId, args.max_videos || 25, { proxy: route.proxy, offset });
     } else {
-      videoIds = await searchVideoIds(input, args.max_videos || 10, { proxy: route.proxy });
+      list = await searchVideoIds(input, args.max_videos || 10, { proxy: route.proxy, offset });
     }
+    const videoIds = list.ids;
+    if (!videoIds.length) throw new Error(`Nothing at offset ${offset}: the ${type} lists ${list.total} videos.`);
+    if (inline) return collectTranscripts(videoIds, { route, onBlocked, language, notify, fetcher: deps.fetcher, budget: deps.budget, offset });
     const summary = await saveTranscripts(videoIds, { dir, route, onBlocked, language, notify, fetcher: deps.fetcher });
     if (route.warpProblem && summary.stoppedEarly) {
       summary.hint = `${route.warpProblem}. Start Docker and try again, or set YOUTUBE_TRANSCRIPT_PROXY.`;
@@ -180,7 +243,7 @@ export function serve({ input = process.stdin, output = process.stdout } = {}) {
       serverInfo: { name: 'youtube-transcript', version: VERSION },
     }),
     ping: () => ({}),
-    'tools/list': () => ({ tools: [TOOL] }),
+    'tools/list': () => ({ tools: [toolFor()] }),
     'resources/list': () => ({ resources: [] }),
     'prompts/list': () => ({ prompts: [] }),
     'tools/call': async (params) => {
@@ -193,7 +256,7 @@ export function serve({ input = process.stdin, output = process.stdout } = {}) {
           params: { progressToken, message, ...(progress !== undefined ? { progress, total } : {}) },
         });
       };
-      if (params?.name !== TOOL.name) throw new Error(`Unknown tool: ${params?.name}`);
+      if (params?.name !== toolFor().name) throw new Error(`Unknown tool: ${params?.name}`);
       const result = await runTool(params.arguments || {}, { notify });
       return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
     },

@@ -94,7 +94,7 @@ The server offers one tool, `get_youtube_transcript`:
 | `search` | a search phrase, not a link | files + an index, about 20 results at most (default 10) |
 
 Optional: `language` (`"de"`, `"en"`, …), `max_videos`, `include_segments` (single video),
-`save_to` (playlist and search).
+`save_to` and `offset` (playlist and search; `offset` starts further down the list).
 
 Just ask your assistant, for example *"summarize this video: https://youtu.be/…"* or
 *"search YouTube for n8n MCP tutorials and compare what they say"*.
@@ -130,8 +130,19 @@ answer is an index:
 ```
 
 Your assistant then reads the files it needs. Videos without captions come back as
-`skipped` with a reason instead of failing the whole run. A run of 100 videos took about a
-minute in our test.
+`skipped` with a reason instead of failing the whole run. A run of 100 videos took 64
+seconds in one test and several minutes in another — it depends on YouTube and on the WARP
+exit you get.
+
+### Running it on a server instead
+
+A server that runs somewhere else — a shared gateway, for example — cannot leave files
+behind for the person asking. Start it with `YOUTUBE_TRANSCRIPT_OUTPUT=inline` and a
+playlist or a search answers with the text itself, about 100,000 characters at a time. When
+more of the requested videos are left, the answer has `nextOffset`; the next call passes it
+as `offset` and carries on. Point such a server at a WARP proxy you run next to it with
+`YOUTUBE_TRANSCRIPT_PROXY=http://warp:1080` (the `caomingjun/warp` image serves HTTP on
+port 1080); it then uses that proxy for everything and never tries to start Docker itself.
 
 ## Cloudflare WARP
 

@@ -180,7 +180,9 @@ export async function getTranscript(videoId, { language, includeSegments = true,
 // --------------------------------------------------------------------------
 // Playlists and search
 // --------------------------------------------------------------------------
-export async function playlistVideoIds(playlistId, limit, options) {
+// Both listing functions answer { ids, total }: the `limit` videos from position
+// `offset`, and how many the page lists in all, so a caller can page through them.
+export async function playlistVideoIds(playlistId, limit, { offset = 0, ...options } = {}) {
   const html = await getText(`https://www.youtube.com/playlist?list=${playlistId}`, options);
   const entries = new Map();
   const re = /"watchEndpoint":\{"videoId":"([a-zA-Z0-9_-]{11})","playlistId":"([^"]+)","index":(\d+)/g;
@@ -191,10 +193,11 @@ export async function playlistVideoIds(playlistId, limit, options) {
     if (looksBlocked(html)) throw new BlockedError('YouTube served a bot check instead of the playlist');
     throw new Error(`Playlist ${playlistId} is empty or private`);
   }
-  return [...entries.entries()].sort((a, b) => a[1] - b[1]).map(([id]) => id).slice(0, limit);
+  const all = [...entries.entries()].sort((a, b) => a[1] - b[1]).map(([id]) => id);
+  return { ids: all.slice(offset, offset + limit), total: all.length };
 }
 
-export async function searchVideoIds(query, limit, options) {
+export async function searchVideoIds(query, limit, { offset = 0, ...options } = {}) {
   const url = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}&sp=EgIQAQ%3D%3D`;
   const html = await getText(url, options);
   const ids = [...new Set([...html.matchAll(/"videoRenderer":\{"videoId":"([a-zA-Z0-9_-]{11})"/g)].map((m) => m[1]))];
@@ -202,7 +205,7 @@ export async function searchVideoIds(query, limit, options) {
     if (looksBlocked(html)) throw new BlockedError('YouTube served a bot check instead of search results');
     throw new Error(`No videos found for "${query}"`);
   }
-  return ids.slice(0, limit);
+  return { ids: ids.slice(offset, offset + limit), total: ids.length };
 }
 
 const BLOCKS_IN_A_ROW = 3;
