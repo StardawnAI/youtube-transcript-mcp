@@ -11,6 +11,11 @@ import { writeConfig } from './config.mjs';
 export const CONTAINER = 'youtube-transcript-warp';
 const IMAGE = 'caomingjun/warp:latest';
 const TRACE = 'https://www.cloudflare.com/cdn-cgi/trace';
+// A video that always has captions: if its page answers, YouTube accepts this exit.
+const PROBE = 'https://www.youtube.com/watch?v=jNQXAC9IVRw';
+// How many fresh WARP identities a start tries before it settles for what it has.
+const MAX_ROTATIONS = 5;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const docker = (args, opts = {}) => spawnSync('docker', args, { encoding: 'utf8', ...opts });
 
@@ -37,6 +42,50 @@ export async function checkProxy(proxy) {
   } catch (e) {
     return { ok: false, error: e.message };
   }
+}
+
+// A tunnel is not enough. YouTube refuses some WARP exit addresses — measured from
+// a data centre: one in three identities worked — and the refusal looks exactly
+// like the block this proxy is there to avoid.
+//
+// The first requests after a tunnel (re)connects can fail even on an address YouTube
+// accepts — measured: an identity refused right after the switch answered eight of
+// eight probes a minute later — so an address only counts as refused after a few
+// tries a few seconds apart.
+export async function youtubeReachable(proxy, { attempts = 3, gapMs = 4000 } = {}) {
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const page = await getText(PROBE, { proxy, retries: 1, timeout: 20000 });
+      if (/"playabilityStatus":\{"status":"OK"/.test(page)) return true;
+    } catch {
+      // counts as a failed try
+    }
+    if (i < attempts - 1) await sleep(gapMs);
+  }
+  return false;
+}
+
+// Another WARP identity, which means another exit address, in the running
+// container: no restart, no new container.
+export async function rotate({ log = () => {} } = {}) {
+  const state = containerState();
+  if (!state.exists || !state.running) throw new Error(`${CONTAINER} is not running`);
+  const cli = (...args) => docker(['exec', CONTAINER, 'warp-cli', '--accept-tos', ...args]);
+  log('YouTube refuses this WARP exit address — switching to a new WARP identity');
+  cli('registration', 'delete');
+  await sleep(2000);
+  if (cli('registration', 'new').status !== 0) {
+    await sleep(3000);
+    cli('registration', 'new');
+  }
+  cli('connect');
+  const proxy = `http://127.0.0.1:${state.port}`;
+  for (let i = 0; i < 10; i++) {
+    await sleep(3000);
+    const check = await checkProxy(proxy);
+    if (check.ok) return { proxy, ip: check.ip };
+  }
+  throw new Error('WARP did not reconnect after switching its identity');
 }
 
 export async function status() {
@@ -102,8 +151,12 @@ export async function start({ port = 1080, log = () => {} } = {}) {
   for (let i = 0; i < 30; i++) {
     const check = await checkProxy(proxy);
     if (check.ok) {
+      let ip = check.ip;
+      for (let tries = 0; tries < MAX_ROTATIONS && !(await youtubeReachable(proxy)); tries++) {
+        ({ ip } = await rotate({ log }));
+      }
       await writeConfig({ proxy });
-      return { proxy, ip: check.ip };
+      return { proxy, ip };
     }
     recovery[i]?.();
     await new Promise((r) => setTimeout(r, 3000));

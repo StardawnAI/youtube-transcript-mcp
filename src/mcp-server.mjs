@@ -5,13 +5,15 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { isAbsolute, join, resolve } from 'node:path';
 import { BlockedError, getTranscript, getTranscripts, parsePlaylistId, parseVideoId, playlistVideoIds, searchVideoIds } from './youtube.mjs';
 import { configuredProxy, readConfig } from './config.mjs';
-import { dockerAvailable, start as startWarp } from './warp.mjs';
+import { dockerAvailable, rotate as rotateWarp, start as startWarp } from './warp.mjs';
 
-export const VERSION = '2.4.0';
+export const VERSION = '2.5.0';
 const PROTOCOL = '2025-06-18';
 const DELAY_MS = Number(process.env.YOUTUBE_TRANSCRIPT_DELAY_MS || 1000);
 const CONCURRENCY = Number(process.env.YOUTUBE_TRANSCRIPT_CONCURRENCY || 3);
 const DEFAULT_SAVE_DIR = 'yt_transcripts';
+// How often one request may switch the WARP identity because YouTube keeps refusing it.
+const MAX_ROTATIONS_PER_RUN = 3;
 const INLINE_CHARS = 100000;
 
 // Where the transcripts of a playlist or a search go. "files" suits a server on
@@ -69,18 +71,35 @@ function detectType(input, given) {
 // also the way out when a single request is blocked.
 //
 // `run(route, onBlocked)` does the work. `route.proxy` is read when it starts;
-// `onBlocked()` may return a better proxy in the middle of a run, once.
+// `onBlocked()` may return a better route in the middle of a run: the first time
+// WARP, after that a new WARP identity (the proxy stays the same, its exit address
+// does not), a few times at most.
 export async function withRoute(run, { bulk = false, notify = () => {} } = {}, deps = {}) {
-  const d = { configuredProxy, readConfig, dockerAvailable, startWarp, ...deps };
+  const d = { configuredProxy, readConfig, dockerAvailable, startWarp, rotateWarp, ...deps };
   const fixed = d.configuredProxy();
   const config = await d.readConfig();
   const allowed = !fixed && config.autoWarp !== false && process.env.YOUTUBE_TRANSCRIPT_AUTO_WARP !== '0';
 
   const route = { proxy: fixed, warpProblem: null };
   let attempted = false;
+  let rotations = 0;
 
   const useWarp = async (reason) => {
-    if (!allowed || attempted) return null;
+    if (!allowed) return null;
+    if (attempted) {
+      // WARP is already the route and YouTube still refuses: it dislikes this exit
+      // address, not WARP. Another identity gets another address.
+      if (!route.proxy || rotations >= MAX_ROTATIONS_PER_RUN) return null;
+      rotations++;
+      try {
+        const { ip } = await d.rotateWarp({ log: notify });
+        notify(`WARP has a new exit address (${ip})`);
+        return route.proxy;
+      } catch (e) {
+        notify(`Could not switch the WARP identity: ${e.message}`);
+        return null;
+      }
+    }
     attempted = true;
     if (!d.dockerAvailable()) {
       route.warpProblem = 'Docker is not running here, so Cloudflare WARP cannot be started';
@@ -108,12 +127,14 @@ export async function withRoute(run, { bulk = false, notify = () => {} } = {}, d
   };
 
   if (bulk) await useWarp('A run of many videos needs a route YouTube does not block');
-  try {
-    return await run(route, () => useWarp('YouTube blocked this IP'));
-  } catch (e) {
-    if (!(e instanceof BlockedError)) throw e;
-    if (!(await useWarp('YouTube blocked this IP'))) throw withHint(e);
-    return run(route, async () => null);
+  const escalate = () => useWarp('YouTube blocked this IP');
+  for (;;) {
+    try {
+      return await run(route, escalate);
+    } catch (e) {
+      if (!(e instanceof BlockedError)) throw e;
+      if (!(await escalate())) throw withHint(e);
+    }
   }
 }
 

@@ -151,3 +151,28 @@ test('the tool description follows the output mode: no save_to for a server that
   assert.match(inline.description, /nextOffset/);
   assert.match(files.description, /written to files/);
 });
+
+test('a new WARP identity behind the same proxy address is a route change too', async () => {
+  // The address of the proxy stays the same; only its exit address changes. Parallel
+  // workers that are blocked together must ask once per change, and every one of them
+  // must retry after it, however the timing falls.
+  let identity = 0;
+  let offers = 0;
+  const fetcher = async (videoId) => {
+    if (identity < 2) throw new BlockedError('blocked');
+    return ok(videoId);
+  };
+  const result = await getTranscripts(ids(9), {
+    proxy: 'http://warp:1080',
+    concurrency: 3,
+    fetcher,
+    onBlocked: async () => {
+      offers++;
+      await new Promise((r) => setTimeout(r, 15));
+      identity++;
+      return 'http://warp:1080';
+    },
+  });
+  assert.equal(result.successful, 9);
+  assert.equal(offers, 2);
+});

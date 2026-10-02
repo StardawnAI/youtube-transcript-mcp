@@ -30,15 +30,51 @@ test('a run of many videos starts on WARP, with no direct attempt first', async 
   assert.equal(warp.starts, 1);
 });
 
-test('WARP is offered as a better route once per run, and only once', async () => {
+test('a blocked run is offered WARP first, then new WARP identities three times, then nothing', async () => {
   const warp = warpUp();
+  let rotations = 0;
   const offers = [];
   await withRoute(async (route, onBlocked) => {
-    offers.push(await onBlocked(), await onBlocked());
+    for (let i = 0; i < 5; i++) offers.push(await onBlocked());
     return 'done';
-  }, { notify: silent }, { ...base, startWarp: () => warp.startWarp() });
-  assert.deepEqual(offers, [WARP, null]);
+  }, { notify: silent }, {
+    ...base,
+    startWarp: () => warp.startWarp(),
+    rotateWarp: async () => { rotations++; return { proxy: WARP, ip: `104.28.0.${rotations}` }; },
+  });
+  assert.deepEqual(offers, [WARP, WARP, WARP, WARP, null]); // WARP itself, three identities, then it gives up
   assert.equal(warp.starts, 1);
+  assert.equal(rotations, 3);
+});
+
+test('a single video that WARP does not rescue gets a new WARP identity and runs again', async () => {
+  const seen = [];
+  const warp = warpUp();
+  let identity = 0;
+  const run = async (route) => {
+    seen.push([route.proxy, identity]);
+    if (!route.proxy || identity < 2) throw new BlockedError('Sign in to confirm you are not a bot');
+    return 'transcript';
+  };
+  const result = await withRoute(run, { notify: silent }, {
+    ...base,
+    startWarp: () => warp.startWarp(),
+    rotateWarp: async () => { identity++; return { proxy: WARP, ip: '104.28.0.9' }; },
+  });
+  assert.equal(result, 'transcript');
+  assert.deepEqual(seen, [[null, 0], [WARP, 0], [WARP, 1], [WARP, 2]]);
+});
+
+test('when switching the WARP identity fails, the block is reported', async () => {
+  const warp = warpUp();
+  await assert.rejects(
+    withRoute(async () => { throw new BlockedError('blocked'); }, { notify: silent }, {
+      ...base,
+      startWarp: () => warp.startWarp(),
+      rotateWarp: async () => { throw new Error('container is gone'); },
+    }),
+    BlockedError,
+  );
 });
 
 test('without Docker a run of many videos goes out directly and says why in the block message', async () => {

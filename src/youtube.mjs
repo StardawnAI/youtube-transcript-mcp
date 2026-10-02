@@ -231,11 +231,12 @@ export async function getTranscripts(videoIds, { onProgress, onVideo, onBlocked,
   let blocksInARow = 0;
   let halted = null;
   let rerouting = null;
+  let routeVersion = 0; // counts the route changes, so a worker knows when it has missed one
 
   // Parallel workers that hit the block together ask for the new route once.
   const reroute = () => {
     rerouting ??= Promise.resolve(onBlocked?.())
-      .then((next) => { if (next) proxy = next; return next; })
+      .then((next) => { if (next) { proxy = next; routeVersion++; } return next; })
       .finally(() => { rerouting = null; });
     return rerouting;
   };
@@ -243,12 +244,15 @@ export async function getTranscripts(videoIds, { onProgress, onVideo, onBlocked,
   async function fetchOne(videoId) {
     for (let tries = 0; ; tries++) {
       const used = proxy;
+      const version = routeVersion;
       try {
         return await fetcher(videoId, { ...options, proxy: used });
       } catch (e) {
-        if (!(e instanceof BlockedError) || tries >= 2) throw e;
-        // The route may have changed while this request was in flight
-        if (proxy === used && !(await reroute())) throw e;
+        if (!(e instanceof BlockedError) || tries >= 4) throw e;
+        // The route may have changed while this request was in flight. The proxy
+        // address can stay the same (a new WARP identity is another exit behind it),
+        // so the version, not the address, tells.
+        if (routeVersion === version && !(await reroute())) throw e;
       }
     }
   }

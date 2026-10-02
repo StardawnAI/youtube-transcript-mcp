@@ -161,11 +161,22 @@ The server decides by itself:
   are left. If YouTube keeps refusing even then, the run stops after three in a row and
   returns what it got — the files already written stay.
 
+**YouTube accepts some WARP exit addresses and refuses others.** Each WARP identity (the
+free registration the container made on its first start) comes with one exit address, and
+a refused one stays refused: measured from a data centre, roughly one fresh identity in
+three was accepted; from a home connection almost all were. So a running tunnel proves
+nothing. After the container is up the server asks YouTube for a video page through it,
+and if YouTube says no it switches to a new identity inside the running container — about
+half a minute, no restart — up to five times. The same happens in the middle of a run when
+YouTube starts refusing, up to three times per request. An address only counts as refused
+after three tries a few seconds apart: right after a switch the first requests can fail on
+an address that works a minute later.
+
 The very first start downloads the WARP image once (about 370 MB, half a minute on a fast
-connection); after that it starts in seconds. The container keeps running (`--restart unless-stopped`) and is reused. If its
-tunnel has silently died — the WARP daemon does that now and then, and the proxy port keeps
-forwarding *without* the tunnel — the server notices and restarts it. You can also do it up
-front or check what's going on:
+connection); after that it starts in seconds. The container keeps running (`--restart
+unless-stopped`) and is reused. If its tunnel has silently died — the WARP daemon does that
+now and then, and the proxy port keeps forwarding *without* the tunnel — the server notices
+and restarts it. You can also do it up front or check what's going on:
 
 ```bash
 youtube-transcript-mcp doctor        # can this machine reach YouTube? which proxy is in use?
