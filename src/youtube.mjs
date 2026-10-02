@@ -37,6 +37,19 @@ export class BlockedError extends Error {
 const BLOCK_HINTS = ['sign in to confirm', 'not a bot', 'login_required'];
 const looksBlocked = (text = '') => BLOCK_HINTS.some((h) => text.toLowerCase().includes(h));
 
+// "Too many requests" is a block like the bot check: this address has been asking too
+// much. It must reach the callers as one, or a throttled run counts every video as a
+// separate failure instead of changing the route.
+const isRateLimit = (e) => /^HTTP 429\b/.test(e?.message || '');
+async function fetchPage(url, options) {
+  try {
+    return await getText(url, options);
+  } catch (e) {
+    if (isRateLimit(e)) throw new BlockedError('YouTube is rate limiting this address (HTTP 429)');
+    throw e;
+  }
+}
+
 // --------------------------------------------------------------------------
 // Input parsing
 // --------------------------------------------------------------------------
@@ -113,7 +126,7 @@ function pickTrack(tracks, language) {
 }
 
 export async function getTranscript(videoId, { language, includeSegments = true, ...options } = {}) {
-  const page = await getText(`${WATCH}${videoId}`, options);
+  const page = await fetchPage(`${WATCH}${videoId}`, options);
   const apiKey = page.match(/"INNERTUBE_API_KEY"\s*:\s*"([^"]+)"/)?.[1];
   if (!apiKey) {
     if (looksBlocked(page)) throw new BlockedError('YouTube served a bot check instead of the video page');
@@ -129,6 +142,7 @@ export async function getTranscript(videoId, { language, includeSegments = true,
       data = await playerResponse(videoId, client, apiKey, options);
     } catch (e) {
       attempts.push(`${client.clientName}: ${e.message}`);
+      if (isRateLimit(e)) blocked = true;
       continue;
     }
 
@@ -148,7 +162,7 @@ export async function getTranscript(videoId, { language, includeSegments = true,
     }
 
     const track = pickTrack(tracks, language);
-    const xml = await getText(track.baseUrl, options);
+    const xml = await fetchPage(track.baseUrl, options);
     const segments = parseTranscript(xml);
     if (!segments.length) {
       attempts.push(`${client.clientName}: caption file was empty`);
@@ -183,7 +197,7 @@ export async function getTranscript(videoId, { language, includeSegments = true,
 // Both listing functions answer { ids, total }: the `limit` videos from position
 // `offset`, and how many the page lists in all, so a caller can page through them.
 export async function playlistVideoIds(playlistId, limit, { offset = 0, ...options } = {}) {
-  const html = await getText(`https://www.youtube.com/playlist?list=${playlistId}`, options);
+  const html = await fetchPage(`https://www.youtube.com/playlist?list=${playlistId}`, options);
   const entries = new Map();
   const re = /"watchEndpoint":\{"videoId":"([a-zA-Z0-9_-]{11})","playlistId":"([^"]+)","index":(\d+)/g;
   for (const m of html.matchAll(re)) {
@@ -199,7 +213,7 @@ export async function playlistVideoIds(playlistId, limit, { offset = 0, ...optio
 
 export async function searchVideoIds(query, limit, { offset = 0, ...options } = {}) {
   const url = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}&sp=EgIQAQ%3D%3D`;
-  const html = await getText(url, options);
+  const html = await fetchPage(url, options);
   const ids = [...new Set([...html.matchAll(/"videoRenderer":\{"videoId":"([a-zA-Z0-9_-]{11})"/g)].map((m) => m[1]))];
   if (!ids.length) {
     if (looksBlocked(html)) throw new BlockedError('YouTube served a bot check instead of search results');
