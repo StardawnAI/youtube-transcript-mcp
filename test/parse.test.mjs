@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parsePlaylistId, parseTranscript, parseVideoId } from '../src/youtube.mjs';
+import { parsePlaylistId, parseTranscript, parseVideoId, pickTrack } from '../src/youtube.mjs';
 
 test('parseVideoId accepts the common link shapes', () => {
   const id = 'jNQXAC9IVRw';
@@ -45,4 +45,30 @@ test('parseTranscript survives a missing duration', () => {
   const [segment] = parseTranscript('<p t="500">hello</p>');
   assert.equal(segment.endMs, 500);
   assert.equal(segment.end, '00:00:00.500');
+});
+
+// Caption lists as YouTube returns them (hl=en): sorted by language name, so a
+// translation such as Arabic comes first.
+const track = (languageCode, kind) => ({ languageCode, ...(kind ? { kind } : {}) });
+
+test('pickTrack takes the video\'s own language when YouTube dubs it automatically', () => {
+  const tracks = ['ar', 'bn', 'nl-NL', 'en', 'fr-FR', 'de-DE'].map((l) => track(l, 'asr'));
+  const captions = { captionTracks: tracks, defaultTranslationSourceTrackIndices: [3] };
+  assert.equal(pickTrack(captions).languageCode, 'en');
+});
+
+test('pickTrack takes the video\'s own language over subtitle translations', () => {
+  const tracks = [track('ar'), track('zh-Hans'), track('en'), track('en', 'asr'), track('fr')];
+  assert.equal(pickTrack({ captionTracks: tracks, defaultTranslationSourceTrackIndices: [2] }), tracks[2]);
+  // the default caption track of the original audio track says the same
+  const audioTracks = [{ audioTrackId: 'fr.3', defaultCaptionTrackIndex: 2 }, { audioTrackId: 'en-US.4', defaultCaptionTrackIndex: 2 }];
+  assert.equal(pickTrack({ captionTracks: tracks, audioTracks, defaultAudioTrackIndex: 1 }), tracks[2]);
+});
+
+test('pickTrack falls back to written captions, and a requested language wins', () => {
+  const tracks = [track('de', 'asr'), track('en'), track('es')];
+  assert.equal(pickTrack({ captionTracks: tracks }), tracks[1]);
+  assert.equal(pickTrack({ captionTracks: tracks, defaultTranslationSourceTrackIndices: [1] }, 'es'), tracks[2]);
+  assert.equal(pickTrack({ captionTracks: [track('pt-BR')] }, 'pt').languageCode, 'pt-BR');
+  assert.equal(pickTrack({ captionTracks: [] }), null);
 });

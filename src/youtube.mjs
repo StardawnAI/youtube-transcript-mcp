@@ -113,7 +113,9 @@ async function playerResponse(videoId, client, apiKey, options) {
   return postJson(`${PLAYER}?key=${apiKey}`, { context, videoId }, { ...options, headers: { 'User-Agent': userAgent } });
 }
 
-function pickTrack(tracks, language) {
+// `captions` is the player's playerCaptionsTracklistRenderer.
+export function pickTrack(captions, language) {
+  const tracks = captions.captionTracks || [];
   if (!tracks.length) return null;
   if (language) {
     const exact = tracks.find((t) => t.languageCode === language);
@@ -121,6 +123,12 @@ function pickTrack(tracks, language) {
     const prefix = tracks.find((t) => t.languageCode?.startsWith(`${language}-`));
     if (prefix) return prefix;
   }
+  // The video's own language: the track YouTube translates from, or the one it turns on
+  // for the original audio. The list is sorted by language name, so its first entry is
+  // often a translation (Arabic on videos with many subtitles or automatic dubbing).
+  const own = tracks[captions.defaultTranslationSourceTrackIndices?.[0]] ||
+    tracks[captions.audioTracks?.[captions.defaultAudioTrackIndex ?? 0]?.defaultCaptionTrackIndex];
+  if (own) return own;
   // Manually written captions before auto-generated ones
   return tracks.find((t) => t.kind !== 'asr') || tracks[0];
 }
@@ -148,7 +156,8 @@ export async function getTranscript(videoId, { language, includeSegments = true,
 
     const status = data.playabilityStatus?.status;
     const reason = data.playabilityStatus?.reason || '';
-    const tracks = data.captions?.playerCaptionsTracklistRenderer?.captionTracks || [];
+    const captions = data.captions?.playerCaptionsTracklistRenderer || {};
+    const tracks = captions.captionTracks || [];
     const details = data.videoDetails || {};
     const micro = data.microformat?.playerMicroformatRenderer || {};
 
@@ -161,7 +170,7 @@ export async function getTranscript(videoId, { language, includeSegments = true,
       continue;
     }
 
-    const track = pickTrack(tracks, language);
+    const track = pickTrack(captions, language);
     const xml = await fetchPage(track.baseUrl, options);
     const segments = parseTranscript(xml);
     if (!segments.length) {

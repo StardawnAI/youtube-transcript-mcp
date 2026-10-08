@@ -7,7 +7,7 @@ import { BlockedError, getTranscript, getTranscripts, parsePlaylistId, parseVide
 import { configuredProxy, readConfig } from './config.mjs';
 import { dockerAvailable, rotate as rotateWarp, start as startWarp } from './warp.mjs';
 
-export const VERSION = '2.5.1';
+export const VERSION = '2.5.2';
 const PROTOCOL = '2025-06-18';
 const DELAY_MS = Number(process.env.YOUTUBE_TRANSCRIPT_DELAY_MS || 1000);
 const CONCURRENCY = Number(process.env.YOUTUBE_TRANSCRIPT_CONCURRENCY || 3);

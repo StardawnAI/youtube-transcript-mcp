@@ -7,12 +7,13 @@
 import { spawnSync } from 'node:child_process';
 import { getText } from './http.mjs';
 import { writeConfig } from './config.mjs';
+import { getTranscript } from './youtube.mjs';
 
 export const CONTAINER = 'youtube-transcript-warp';
 const IMAGE = 'caomingjun/warp:latest';
 const TRACE = 'https://www.cloudflare.com/cdn-cgi/trace';
-// A video that always has captions: if its page answers, YouTube accepts this exit.
-const PROBE = 'https://www.youtube.com/watch?v=jNQXAC9IVRw';
+// A video that always has captions: if its transcript arrives, YouTube accepts this exit.
+const PROBE = 'jNQXAC9IVRw';
 // How many fresh WARP identities a start tries before it settles for what it has.
 const MAX_ROTATIONS = 5;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -52,11 +53,15 @@ export async function checkProxy(proxy) {
 // accepts — measured: an identity refused right after the switch answered eight of
 // eight probes a minute later — so an address only counts as refused after a few
 // tries a few seconds apart.
+//
+// The probe is a whole transcript, not the watch page: YouTube has served the page
+// and the player through an exit address while refusing its caption files with
+// HTTP 429 (measured in the AWG hub on 2026-10-07), and such an address is refused.
 export async function youtubeReachable(proxy, { attempts = 3, gapMs = 4000 } = {}) {
   for (let i = 0; i < attempts; i++) {
     try {
-      const page = await getText(PROBE, { proxy, retries: 1, timeout: 20000 });
-      if (/"playabilityStatus":\{"status":"OK"/.test(page)) return true;
+      await getTranscript(PROBE, { proxy, retries: 1, timeout: 20000, includeSegments: false });
+      return true;
     } catch {
       // counts as a failed try
     }
