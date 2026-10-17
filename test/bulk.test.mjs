@@ -152,6 +152,20 @@ test('the tool description follows the output mode: no save_to for a server that
   assert.match(files.description, /written to files/);
 });
 
+test('the tool says what it changes, so a client does not ask the user before every read', () => {
+  // ChatGPT, Codex and claude.ai treat a tool without readOnlyHint as a destructive
+  // write and stop for the user's approval on every call. Answering inline only reads
+  // youtube.com; the files mode writes transcript files, which destroys nothing.
+  const inline = toolFor('inline').annotations;
+  const files = toolFor('files').annotations;
+  assert.equal(inline.readOnlyHint, true);
+  assert.equal(inline.destructiveHint, false);
+  assert.equal(inline.openWorldHint, true);
+  assert.equal(files.readOnlyHint, false);
+  assert.equal(files.destructiveHint, false);
+  assert.equal(files.idempotentHint, true);
+});
+
 test('a new WARP identity behind the same proxy address is a route change too', async () => {
   // The address of the proxy stays the same; only its exit address changes. Parallel
   // workers that are blocked together must ask once per change, and every one of them

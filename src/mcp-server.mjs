@@ -7,7 +7,7 @@ import { BlockedError, getTranscript, getTranscripts, parsePlaylistId, parseVide
 import { configuredProxy, readConfig } from './config.mjs';
 import { dockerAvailable, rotate as rotateWarp, start as startWarp } from './warp.mjs';
 
-export const VERSION = '2.5.2';
+export const VERSION = '2.5.3';
 const PROTOCOL = '2025-06-18';
 const DELAY_MS = Number(process.env.YOUTUBE_TRANSCRIPT_DELAY_MS || 1000);
 const CONCURRENCY = Number(process.env.YOUTUBE_TRANSCRIPT_CONCURRENCY || 3);
@@ -53,6 +53,16 @@ ${bulk} of many videos go through Cloudflare WARP, because YouTube refuses a pla
 
 If a link contains a list= parameter, ask the user whether they mean the single video or the whole playlist instead of guessing.`,
     inputSchema: { type: 'object', properties, required: ['youtube_url'] },
+    // Without these hints ChatGPT, Codex and claude.ai assume a destructive write and
+    // stop for the user's approval on every call. Inline it only reads youtube.com;
+    // the files mode writes transcript files, the same ones again on a second call.
+    annotations: {
+      title: 'Read YouTube transcripts',
+      readOnlyHint: inline,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
   };
 }
 
