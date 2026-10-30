@@ -1,0 +1,4 @@
+# CUDA 12 libraries for ctranslate2 4.x, only in an image built with CUDA=1.
+# The host needs an NVIDIA driver for CUDA 12 or newer; the toolkit itself is not needed.
+nvidia-cublas-cu12==12.9.2.10
+nvidia-cudnn-cu12==9.27.0.42

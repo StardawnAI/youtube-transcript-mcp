@@ -6,8 +6,9 @@ import { isAbsolute, join, resolve } from 'node:path';
 import { BlockedError, getTranscript, getTranscripts, parsePlaylistId, parseVideoId, playlistVideoIds, searchVideoIds } from './youtube.mjs';
 import { configuredProxy, readConfig } from './config.mjs';
 import { dockerAvailable, rotate as rotateWarp, start as startWarp } from './warp.mjs';
+import { runSocialTool, socialTool } from './social.mjs';
 
-export const VERSION = '2.5.3';
+export const VERSION = '3.0.0';
 const PROTOCOL = '2025-06-18';
 const DELAY_MS = Number(process.env.YOUTUBE_TRANSCRIPT_DELAY_MS || 1000);
 const CONCURRENCY = Number(process.env.YOUTUBE_TRANSCRIPT_CONCURRENCY || 3);
@@ -259,6 +260,17 @@ export async function runTool(args, { notify = () => {} } = {}, deps = {}) {
   }, { bulk: true, notify }, deps);
 }
 
+// The TikTok/Instagram tool needs a worker: Docker on this machine, or one named
+// in SMTRANSCRIPT_WORKER_URL. A server elsewhere (inline mode) without one would
+// only offer a tool that always fails, so it does not offer it.
+export function tools(env = process.env) {
+  const list = [{ tool: toolFor(), run: runTool }];
+  if (outputMode() !== 'inline' || env.SMTRANSCRIPT_WORKER_URL) {
+    list.push({ tool: socialTool(outputMode()), run: runSocialTool });
+  }
+  return list;
+}
+
 // ---------------------------------------------------------------------------
 // JSON-RPC plumbing
 // ---------------------------------------------------------------------------
@@ -271,10 +283,10 @@ export function serve({ input = process.stdin, output = process.stdout } = {}) {
     initialize: (params) => ({
       protocolVersion: /^\d{4}-\d{2}-\d{2}$/.test(params?.protocolVersion || '') ? params.protocolVersion : PROTOCOL,
       capabilities: { tools: { listChanged: false } },
-      serverInfo: { name: 'youtube-transcript', version: VERSION },
+      serverInfo: { name: 'smtranscript', version: VERSION },
     }),
     ping: () => ({}),
-    'tools/list': () => ({ tools: [toolFor()] }),
+    'tools/list': () => ({ tools: tools().map((t) => t.tool) }),
     'resources/list': () => ({ resources: [] }),
     'prompts/list': () => ({ prompts: [] }),
     'tools/call': async (params) => {
@@ -287,8 +299,9 @@ export function serve({ input = process.stdin, output = process.stdout } = {}) {
           params: { progressToken, message, ...(progress !== undefined ? { progress, total } : {}) },
         });
       };
-      if (params?.name !== toolFor().name) throw new Error(`Unknown tool: ${params?.name}`);
-      const result = await runTool(params.arguments || {}, { notify });
+      const run = tools().find((t) => t.tool.name === params?.name)?.run;
+      if (!run) throw new Error(`Unknown tool: ${params?.name}`);
+      const result = await run(params.arguments || {}, { notify });
       return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
     },
   };
@@ -315,5 +328,5 @@ export function serve({ input = process.stdin, output = process.stdout } = {}) {
     }
   });
 
-  process.stderr.write(`youtube-transcript MCP server ${VERSION} ready\n`);
+  process.stderr.write(`smtranscript MCP server ${VERSION} ready\n`);
 }

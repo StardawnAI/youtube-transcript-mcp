@@ -5,9 +5,11 @@ import { spawnSync } from 'node:child_process';
 import { homedir } from 'node:os';
 import { join, dirname } from 'node:path';
 
-const SERVER_KEY = 'youtube-transcript';
-const MARKETPLACE = 'https://github.com/StardawnAI/youtube-transcript-mcp.git';
-const PLUGIN_ID = 'awg-youtube-transcript@stardawn-ai';
+const SERVER_KEY = 'smtranscript';
+// The name before the rename to SMTranscript; a connect replaces it rather than adding a second copy.
+const OLD_KEY = 'youtube-transcript';
+const MARKETPLACE = 'https://github.com/StardawnAI/SMTranscript.git';
+const PLUGIN_ID = 'awg-smtranscript@stardawn-ai';
 const home = homedir();
 
 const exists = (p) => access(p).then(() => true, () => false);
@@ -58,6 +60,23 @@ function upsertTomlTable(text, header, bodyLines) {
   return [...lines.slice(0, start), header, ...bodyLines, '', ...lines.slice(end)].join('\n').replace(/\n{3,}/g, '\n\n');
 }
 
+export function removeTomlTable(text, header) {
+  const lines = text.split(/\r?\n/);
+  const start = lines.findIndex((l) => l.trim() === header);
+  if (start === -1) return text;
+  let end = start + 1;
+  while (end < lines.length && !/^\s*\[/.test(lines[end])) end++;
+  return [...lines.slice(0, start), ...lines.slice(end)].join('\n');
+}
+
+const tomlServer = (text, bodyLines) =>
+  upsertTomlTable(removeTomlTable(text, `[mcp_servers.${OLD_KEY}]`), `[mcp_servers.${SERVER_KEY}]`, bodyLines);
+
+function jsonServer(cfg, serverPath) {
+  const { [OLD_KEY]: _old, ...others } = cfg.mcpServers || {};
+  return { ...cfg, mcpServers: { ...others, [SERVER_KEY]: serverCommand(serverPath) } };
+}
+
 // Absolute paths, because GUI apps do not always inherit the shell's PATH.
 export function serverCommand(serverPath) {
   return { command: process.execPath, args: [serverPath] };
@@ -88,10 +107,10 @@ export const CLIENTS = {
     async write(serverPath) {
       const { command, args } = serverCommand(serverPath);
       const text = (await exists(this.file)) ? await readFile(this.file, 'utf8') : '';
-      await backupAndWrite(this.file, upsertTomlTable(text, `[mcp_servers.${SERVER_KEY}]`, [
+      await backupAndWrite(this.file, tomlServer(text, [
         `command = ${JSON.stringify(command)}`,
         `args = [${args.map((a) => JSON.stringify(a)).join(', ')}]`,
-        '# playlist and search calls take a few minutes',
+        '# playlist, search and profile calls take a few minutes',
         'tool_timeout_sec = 900',
       ]));
     },
@@ -103,7 +122,7 @@ export const CLIENTS = {
     async write(serverPath) {
       const { command, args } = serverCommand(serverPath);
       const text = (await exists(this.file)) ? await readFile(this.file, 'utf8') : '';
-      await backupAndWrite(this.file, upsertTomlTable(text, `[mcp_servers.${SERVER_KEY}]`, [
+      await backupAndWrite(this.file, tomlServer(text, [
         `command = ${JSON.stringify(command)}`,
         `args = [${args.map((a) => JSON.stringify(a)).join(', ')}]`,
         'tool_timeout_sec = 900',
@@ -115,8 +134,7 @@ export const CLIENTS = {
     file: join(home, '.cursor', 'mcp.json'),
     detect: () => exists(join(home, '.cursor')),
     async write(serverPath) {
-      const cfg = await readJson(this.file);
-      cfg.mcpServers = { ...(cfg.mcpServers || {}), [SERVER_KEY]: serverCommand(serverPath) };
+      const cfg = jsonServer(await readJson(this.file), serverPath);
       await backupAndWrite(this.file, `${JSON.stringify(cfg, null, 2)}\n`);
     },
   },
@@ -125,8 +143,7 @@ export const CLIENTS = {
     file: join(home, '.gemini', 'config', 'mcp_config.json'),
     detect: async () => (await exists(join(home, '.gemini', 'antigravity'))) || (await exists(join(home, '.gemini', 'config'))),
     async write(serverPath) {
-      const cfg = await readJson(this.file);
-      cfg.mcpServers = { ...(cfg.mcpServers || {}), [SERVER_KEY]: serverCommand(serverPath) };
+      const cfg = jsonServer(await readJson(this.file), serverPath);
       await backupAndWrite(this.file, `${JSON.stringify(cfg, null, 2)}\n`);
     },
   },
