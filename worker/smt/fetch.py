@@ -1,0 +1,258 @@
+"""Getting videos, captions and profile listings from the platforms.
+
+yt-dlp does single videos on both platforms and TikTok profiles. Instagram
+profiles go through Instaloader, because yt-dlp marks its own Instagram
+profile extractor as broken (yt-dlp 2026.10.26, measured 2026-10-30).
+
+Every HTTP request either library makes is counted for the job, so "a second
+identical request costs the platform nothing" is a number in the result, not
+a claim.
+"""
+
+from __future__ import annotations
+
+import copy
+import datetime as dt
+import json
+import shutil
+from pathlib import Path
+
+from . import captions
+from .errors import JobError, classify
+
+# Lower-cased extractor names, matched as regular expressions. Anything else
+# — above all yt-dlp's generic extractor, which fetches any page — is off.
+EXTRACTORS = ["tiktok", r"vm\.tiktok", "tiktok:user", "instagram"]
+
+VIDEO_EXT = {".mp4", ".mkv", ".webm", ".mov", ".m4a", ".mp3"}
+CAPTION_EXT = {".vtt": "text/vtt", ".srt": "application/x-subrip", ".json": "application/json"}
+
+
+def _ydl_class():
+    import yt_dlp
+
+    class Counting(yt_dlp.YoutubeDL):
+        def __init__(self, params, count):
+            super().__init__(params)
+            self._count = count
+
+        def urlopen(self, req):
+            self._count()
+            return super().urlopen(req)
+
+    return Counting
+
+
+def adapter_version() -> str:
+    try:
+        import yt_dlp.version
+        return f"yt-dlp {yt_dlp.version.__version__}"
+    except ImportError:
+        return "yt-dlp (not installed)"
+
+
+def _impersonate():
+    """Every request as Chrome, not only the ones yt-dlp marks for it.
+
+    TikTok's account listing (`/api/creator/item_list/`) goes out without
+    impersonation, and from this Linux image it got a 537-byte HTML page back
+    every time while the same request from Windows got the list — same address
+    (measured 2026-10-31, 6 of 6). With Chrome's fingerprint on every request
+    it works from the image too, and single TikToks and Reels still do.
+    """
+    try:
+        import curl_cffi  # noqa: F401 — only checks that it is there
+        from yt_dlp.networking.impersonate import ImpersonateTarget
+        return ImpersonateTarget.from_str("chrome")
+    except ImportError:
+        return None
+
+
+def _opts(proxy: str | None, cookiefile: Path | None, tmp: Path | None = None, max_mb: int = 500) -> dict:
+    opts = {
+        "quiet": True,
+        "no_warnings": True,
+        "noprogress": True,
+        "allowed_extractors": EXTRACTORS,
+        # An empty string, not None: None lets yt-dlp pick up HTTP_PROXY from
+        # the environment, and the route must be exactly the one chosen.
+        "proxy": proxy or "",
+        "socket_timeout": 30,
+        "retries": 2,
+        "fragment_retries": 2,
+        "extractor_retries": 0,
+        "cachedir": False,
+        "max_filesize": max_mb * 1024 * 1024,
+    }
+    target = _impersonate()
+    if target:
+        opts["impersonate"] = target
+    if cookiefile:
+        opts["cookiefile"] = str(cookiefile)
+    if tmp:
+        opts.update({
+            "outtmpl": {"default": str(tmp / "media.%(ext)s")},
+            "format": "bv*[height<=1080]+ba/b[height<=1080]/bv*+ba/b",
+            "merge_output_format": "mp4",
+            "writesubtitles": True,
+            "writeautomaticsub": True,
+            "subtitleslangs": ["all"],
+            "subtitlesformat": "vtt/srt/json/best",
+        })
+    return opts
+
+
+def cookie_copy(cookies_dir: Path | None, platform: str, tmp: Path) -> Path | None:
+    """A copy of the platform's cookie file, because yt-dlp writes cookies back
+    into the file it was given — and the session secret stays untouched."""
+    if not cookies_dir:
+        return None
+    src = cookies_dir / f"{platform}.txt"
+    if not src.is_file():
+        return None
+    dst = tmp / "cookies.txt"
+    shutil.copyfile(src, dst)
+    return dst
+
+
+def resolve(url: str, proxy: str | None, count, cookiefile: Path | None = None) -> list[dict]:
+    """The video entries behind a post: one, or several for a carousel."""
+    try:
+        with _ydl_class()(_opts(proxy, cookiefile), count) as ydl:
+            info = ydl.extract_info(url, download=False)
+            info = ydl.sanitize_info(info)
+    except Exception as exc:  # noqa: BLE001 — classified, not swallowed
+        raise classify(exc) from exc
+    entries = info.get("entries") if info.get("_type") == "playlist" else [info]
+    videos = [e for e in entries or [] if e and (e.get("formats") or e.get("url"))]
+    if not videos:
+        raise JobError("unavailable", f"{url} has no video in it")
+    return videos
+
+
+def download(info: dict, proxy: str | None, tmp: Path, count, cookiefile: Path | None, max_mb: int) -> dict:
+    """Downloads the video and the captions an extractor answer points at,
+    without asking the platform for the page again."""
+    try:
+        with _ydl_class()(_opts(proxy, cookiefile, tmp, max_mb), count) as ydl:
+            ydl.process_ie_result(copy.deepcopy(info), download=True)
+    except Exception as exc:  # noqa: BLE001
+        raise classify(exc) from exc
+    video = None
+    tracks = []
+    for f in sorted(tmp.iterdir()):
+        if f.name.startswith("media.") and f.suffix in VIDEO_EXT and f.name.count(".") == 1:
+            video = f
+        elif f.suffix in CAPTION_EXT and f.name.startswith("media."):
+            # media.<language>.<ext>
+            tracks.append({"language_raw": f.name.split(".")[1], "ext": f.suffix[1:], "path": f})
+    if video is None:
+        # yt-dlp skips a file over max_filesize without raising.
+        raise JobError("too_large", f"no video file arrived (over {max_mb} MB, or nothing to download)")
+    return {"video": video, "captions": tracks}
+
+
+def caption_segments(track: dict) -> list[dict]:
+    return captions.parse(Path(track["path"]).read_text(encoding="utf-8", errors="replace"), track["ext"])
+
+
+# ---------------------------------------------------------------------------
+# Profiles
+# ---------------------------------------------------------------------------
+
+def tiktok_time(video_id: str) -> dt.datetime | None:
+    """A TikTok video ID starts with its upload time: the top 32 bits are Unix
+    seconds. So a date window needs no request per video."""
+    try:
+        return dt.datetime.fromtimestamp(int(video_id) >> 32, dt.timezone.utc)
+    except (ValueError, OverflowError, OSError):
+        return None
+
+
+def tiktok_profile(account: str, limit: int, proxy: str | None, count, cookiefile=None) -> list[dict]:
+    """The newest `limit` videos of an account, newest first."""
+    opts = {**_opts(proxy, cookiefile), "extract_flat": "in_playlist", "playlistend": limit}
+    try:
+        with _ydl_class()(opts, count) as ydl:
+            info = ydl.extract_info(f"https://www.tiktok.com/@{account}", download=False)
+    except Exception as exc:  # noqa: BLE001
+        raise classify(exc) from exc
+    out = []
+    for e in info.get("entries") or []:
+        vid = str(e.get("id") or "")
+        if vid.isdigit():
+            out.append({"id": vid, "url": f"https://www.tiktok.com/@{account}/video/{vid}",
+                        "taken_at": tiktok_time(vid)})
+    return out
+
+
+def _instaloader(proxy: str | None, count, session: Path | None, user: str | None):
+    import instaloader
+    from instaloader.instaloadercontext import RateController
+
+    class Refuse(RateController):
+        # Instaloader's own answer to a 429 is to sleep, for many minutes,
+        # inside the call. The wait belongs to the route budget instead.
+        def handle_429(self, query_type):
+            raise JobError("rate_limited", f"Instagram answered 429 to {query_type}")
+
+    loader = instaloader.Instaloader(
+        quiet=True, download_pictures=False, download_videos=False, download_video_thumbnails=False,
+        save_metadata=False, compress_json=False, max_connection_attempts=1,
+        rate_controller=lambda ctx: Refuse(ctx),
+    )
+    sess = loader.context._session
+    if proxy:
+        sess.proxies = {"http": proxy, "https": proxy}
+    sess.trust_env = False
+    sess.hooks["response"].append(lambda *_a, **_k: count())
+    if session and user and session.is_file():
+        loader.load_session_from_file(user, str(session))
+    return loader
+
+
+def instagram_profile(account: str, limit: int, since: dt.datetime | None, proxy: str | None, count,
+                      cursor: dict | None = None, session: Path | None = None, user: str | None = None,
+                      on_cursor=lambda c: None) -> list[dict]:
+    """Up to `limit` videos of an account, newest first.
+
+    Pinned posts come first whatever their age, so one post older than `since`
+    does not end the listing: only a run of them does — Instagram pins three
+    at most.
+    """
+    import instaloader
+    from instaloader.nodeiterator import FrozenNodeIterator
+
+    try:
+        loader = _instaloader(proxy, count, session, user)
+        profile = instaloader.Profile.from_username(loader.context, account)
+        posts = profile.get_posts()
+        if cursor:
+            posts.thaw(FrozenNodeIterator(**cursor))
+        out, older = [], 0
+        for post in posts:
+            taken = post.date_utc.replace(tzinfo=dt.timezone.utc)
+            if since and taken < since:
+                older += 1
+                if older > 3:
+                    break
+                continue
+            older = 0
+            if post.is_video:
+                out.append({"id": post.shortcode, "url": f"https://www.instagram.com/p/{post.shortcode}/",
+                            "taken_at": taken})
+                on_cursor(json.loads(json.dumps(posts.freeze()._asdict(), default=str)))
+            if len(out) >= limit:
+                break
+        return out
+    except JobError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        name = type(exc).__name__
+        if name == "ProfileNotExistsException":
+            raise JobError("unavailable", str(exc)) from exc
+        if name == "PrivateProfileNotFollowedException":
+            raise JobError("private", str(exc)) from exc
+        if name in ("LoginRequiredException", "LoginException"):
+            raise JobError("login_required", str(exc)) from exc
+        raise classify(exc) from exc

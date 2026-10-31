@@ -100,6 +100,27 @@ export async function status() {
   return { ...state, proxy, ...(await checkProxy(proxy)) };
 }
 
+// What every WARP container of this package is started with, after its name
+// and its network. Also used for the TikTok/Instagram worker's own WARP (social.mjs).
+export function warpRunFlags(container) {
+  return [
+    '--device-cgroup-rule', 'c 10:200 rwm',
+    '--cap-add', 'MKNOD', '--cap-add', 'AUDIT_WRITE', '--cap-add', 'NET_ADMIN',
+    '--sysctl', 'net.ipv6.conf.all.disable_ipv6=0',
+    '--sysctl', 'net.ipv4.conf.all.src_valid_mark=1',
+    '-e', 'WARP_SLEEP=2',
+    '-v', `${container}-data:/var/lib/cloudflare-warp`,
+    // Heals itself. When the WARP daemon dies, the proxy port stays open and
+    // forwards traffic without the tunnel, and Docker only restarts a container
+    // that exits. The container's main process is the proxy `gost`, so the
+    // check stops it after two failed looks, the container exits, and the
+    // restart policy brings it back with a fresh tunnel.
+    '--health-cmd', '/healthcheck/index.sh || (sleep 5; /healthcheck/index.sh) || pkill gost',
+    '--health-interval', '30s', '--health-timeout', '20s', '--health-retries', '2', '--health-start-period', '60s',
+    IMAGE,
+  ];
+}
+
 export async function start({ port = 1080, log = () => {} } = {}) {
   if (!dockerAvailable()) {
     throw new Error('Docker is not running. Start Docker Desktop (or install Docker), then try again.');
@@ -133,20 +154,7 @@ export async function start({ port = 1080, log = () => {} } = {}) {
     const run = docker([
       'run', '-d', '--name', CONTAINER, '--restart', 'unless-stopped',
       '-p', `127.0.0.1:${port}:1080`,
-      '--device-cgroup-rule', 'c 10:200 rwm',
-      '--cap-add', 'MKNOD', '--cap-add', 'AUDIT_WRITE', '--cap-add', 'NET_ADMIN',
-      '--sysctl', 'net.ipv6.conf.all.disable_ipv6=0',
-      '--sysctl', 'net.ipv4.conf.all.src_valid_mark=1',
-      '-e', 'WARP_SLEEP=2',
-      '-v', `${CONTAINER}-data:/var/lib/cloudflare-warp`,
-      // Heals itself. When the WARP daemon dies, the proxy port stays open and
-      // forwards traffic without the tunnel, and Docker only restarts a container
-      // that exits. The container's main process is the proxy `gost`, so the
-      // check stops it after two failed looks, the container exits, and the
-      // restart policy brings it back with a fresh tunnel.
-      '--health-cmd', '/healthcheck/index.sh || (sleep 5; /healthcheck/index.sh) || pkill gost',
-      '--health-interval', '30s', '--health-timeout', '20s', '--health-retries', '2', '--health-start-period', '60s',
-      IMAGE,
+      ...warpRunFlags(CONTAINER),
     ]);
     if (run.status !== 0) throw new Error(`docker run failed: ${(run.stderr || run.stdout).trim()}`);
   }

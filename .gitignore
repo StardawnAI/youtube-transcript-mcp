@@ -13,3 +13,11 @@ node_modules/
 
 # crash dumps of the shell
 *.stackdump
+
+# Python bytecode of the worker
+__pycache__/
+*.pyc
+
+# what the tool writes into a working directory
+sm_transcripts/
+yt_transcripts/

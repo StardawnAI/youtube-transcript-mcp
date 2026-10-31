@@ -1,0 +1,8 @@
+# The worker's direct dependencies, pinned. requirements.lock pins everything
+# below them and is what the image installs; regenerate it with
+#   docker run --rm --entrypoint pip smtranscript-worker freeze > worker/requirements.lock
+# after changing a version here.
+yt-dlp==2026.10.26
+curl_cffi==0.17.0
+faster-whisper==1.2.1
+instaloader==4.16

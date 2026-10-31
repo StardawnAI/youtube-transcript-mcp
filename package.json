@@ -1,9 +1,10 @@
 {
-  "name": "youtube-transcript-mcp",
-  "version": "2.5.3",
-  "description": "MCP server that reads YouTube transcripts — one video, a whole playlist, or the top search results. No API key, no account; Cloudflare WARP, started automatically, for runs of many videos and IPs YouTube blocks.",
+  "name": "smtranscript",
+  "version": "3.0.0",
+  "description": "MCP server for transcripts: YouTube (one video, a playlist, search results; no API key, Cloudflare WARP for bulk) and TikTok and Instagram (videos and accounts, downloaded and kept, transcribed locally with Whisper in a Docker worker).",
   "type": "module",
   "bin": {
+    "smtranscript": "bin/smtranscript.mjs",
     "youtube-transcript-mcp": "bin/youtube-transcript-mcp.mjs"
   },
   "exports": {
@@ -12,6 +13,12 @@
   "files": [
     "bin",
     "src",
+    "worker/smt",
+    "worker/Dockerfile",
+    "worker/.dockerignore",
+    "worker/requirements.txt",
+    "worker/requirements.lock",
+    "worker/requirements-cuda.txt",
     "README.md",
     "LICENSE"
   ],
@@ -27,12 +34,16 @@
     "youtube",
     "transcript",
     "captions",
-    "cloudflare-warp"
+    "cloudflare-warp",
+    "tiktok",
+    "instagram",
+    "whisper",
+    "yt-dlp"
   ],
-  "homepage": "https://github.com/StardawnAI/youtube-transcript-mcp",
+  "homepage": "https://github.com/StardawnAI/SMTranscript",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/StardawnAI/youtube-transcript-mcp.git"
+    "url": "git+https://github.com/StardawnAI/SMTranscript.git"
   },
   "author": "Stardawn AI (https://stardawnai.com)",
   "license": "MIT"

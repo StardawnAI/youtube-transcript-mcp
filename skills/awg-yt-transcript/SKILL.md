@@ -2,7 +2,7 @@
 name: awg-yt-transcript
 description: Get YouTube transcripts — one video, a whole playlist (up to 100 videos) or the top results of a search, decided from what is given. Use when the user pastes a YouTube link, asks what a video says, wants videos summarised, compared or mined for something, or types /awg-yt-transcript. If it fails it repairs itself with /awg-yt-transcript-setup and tries again.
 argument-hint: <video link | playlist link | search phrase>
-allowed-tools: mcp__plugin_awg-youtube-transcript_youtube-transcript__get_youtube_transcript
+allowed-tools: mcp__plugin_awg-smtranscript_smtranscript__get_youtube_transcript
 ---
 
 # YouTube transcripts

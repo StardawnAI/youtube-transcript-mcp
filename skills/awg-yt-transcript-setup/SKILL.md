@@ -13,7 +13,7 @@ steps below on its own when a transcript fails; the person does not have to ask 
 The command below is the server's own CLI:
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/bin/youtube-transcript-mcp.mjs" <command>
+node "${CLAUDE_PLUGIN_ROOT}/bin/smtranscript.mjs" <command>
 ```
 
 ## Diagnose first

@@ -6,9 +6,9 @@
   },
   "plugins": [
     {
-      "name": "awg-youtube-transcript",
+      "name": "awg-smtranscript",
       "source": "./",
-      "description": "YouTube transcripts for videos, playlists and search results. Runs locally, no API key; playlists and searches go through a free Cloudflare WARP proxy started automatically."
+      "description": "Transcripts from YouTube, TikTok and Instagram. Runs locally, no API key; WARP for YouTube bulk, Whisper in Docker for TikTok and Instagram."
     }
   ]
 }
