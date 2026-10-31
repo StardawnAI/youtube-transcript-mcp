@@ -92,6 +92,11 @@ class FakeFetch:
     def instagram_profile(self, account, limit, since, proxy, count, cursor=None, session=None, user=None,
                           on_cursor=lambda c: None):
         self._call("profile", proxy, count)
+        self.cursors_given = getattr(self, "cursors_given", []) + [cursor]
+        if self.resolve_errors:
+            # Part of the way through, as when Instagram cuts a listing off.
+            on_cursor({"node_count": 12, "remaining_data": None})
+            raise self.resolve_errors.pop(0)
         return self.profile_items[:limit]
 
 
@@ -493,6 +498,18 @@ class EngineTest(unittest.TestCase):
         self.drain()
         self.assertEqual(self.fake.calls.count("download"), 4)  # three before, one new
         self.assertEqual(self.engine.status(self.job(again["id"]))["videos"]["total"], 4)
+
+    def test_an_interrupted_instagram_listing_resumes_at_its_cursor(self):
+        self.fake.resolve_errors = [JobError("network", "Connection reset")]
+        self.fake.profile_items = [{"id": "ABC", "url": "https://www.instagram.com/p/ABC/",
+                                    "taken_at": dt.datetime(2026, 10, 29, tzinfo=dt.timezone.utc)}]
+        job, _ = self.engine.submit_profile("alice", "https://www.instagram.com/someone/", {"max_items": 1})
+        self.engine.run_once(("profile",))
+        self.assertEqual(self.job(job["id"])["status"], "retry_wait")
+        self.engine.db.run("update job set next_at = 0 where id = ?", (job["id"],))
+        self.drain()
+        self.assertEqual(self.fake.cursors_given, [None, {"node_count": 12, "remaining_data": None}])
+        self.assertEqual(self.job(job["id"])["status"], "completed")
 
     def test_profile_limits(self):
         with self.assertRaises(JobError):
