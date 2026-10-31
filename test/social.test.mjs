@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { client, parseSocialLink, runSocialTool, shape } from '../src/social.mjs';
+import { dirname, join, sep } from 'node:path';
+import { client, fileName, parseSocialLink, runSocialTool, shape } from '../src/social.mjs';
 import { tools } from '../src/mcp-server.mjs';
 
 const TT = 'https://www.tiktok.com/@tagesschau/video/7702581353048624387';
@@ -135,6 +135,14 @@ test('inline, a profile pages its text with nextOffset', async () => {
   const second = await runSocialTool({ url: 'https://www.tiktok.com/@a', offset: 2 }, {}, deps(api, { output: 'inline' }));
   assert.equal(second.nextOffset, undefined);
   assert.equal(second.videos[0].fullText, 'kurz');
+});
+
+test('a file name from the worker cannot leave save_to', () => {
+  assert.equal(fileName({ platform: 'tiktok', videoId: '7702580867771796758' }), 'tiktok_7702580867771796758');
+  const evil = fileName({ platform: '..', videoId: '../../../.ssh/authorized_keys' });
+  assert.equal(dirname(join('/save', `${evil}.txt`)), '/save'.replace(/\//g, sep));
+  assert.ok(!evil.startsWith('.'));
+  assert.ok(!/[\\/]/.test(fileName({ platform: 'a/b', videoId: 'c\\d' })));
 });
 
 test('a YouTube link is sent to the other tool', async () => {

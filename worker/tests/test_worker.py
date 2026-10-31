@@ -125,7 +125,7 @@ def settings(data: Path, **over) -> config.Settings:
         default_route={"tiktok": "direct", "instagram": "direct"}, gap_seconds={"tiktok": 0, "instagram": 0},
         fetch_workers=1, asr_workers=1, max_video_mb=50, max_duration_s=600, max_profile_items=50,
         min_free_mb=0, asr_model="large-v3-turbo", asr_device="cpu", cookies_dir=None,
-        instaloader_session=None, instagram_user=None,
+        instaloader_session=None, instagram_user=None, asr_models=("small",),
     )
     base.update(over)
     return config.Settings(**base)
@@ -179,6 +179,13 @@ class ErrorsTest(unittest.TestCase):
         }
         for message, want in cases.items():
             self.assertEqual(classify(RuntimeError(message)).cls, want, message)
+
+    def test_a_chosen_video_id_cannot_fake_a_class(self):
+        for message in ("ERROR: [Instagram] rate-limit: Requested content is not available",
+                        "ERROR: [TikTok] 1: Unable to extract https://www.tiktok.com/@rate-limit/video/1"):
+            self.assertNotEqual(classify(RuntimeError(message)).cls, "rate_limited", message)
+        self.assertEqual(classify(RuntimeError("ERROR: [Instagram] abc: Requested content is not available, "
+                                               "rate-limit reached or login required")).cls, "rate_limited")
 
     def test_retry_after_from_the_chain(self):
         class Resp:
@@ -276,6 +283,8 @@ class EngineTest(unittest.TestCase):
         self.assertNotEqual(a["id"], d["id"])
         with self.assertRaises(JobError):
             self.engine.submit_video("alice", TT, {"route": "tor"})
+        with self.assertRaises(JobError):  # not on the list: would load a third model
+            self.engine.submit_video("alice", TT, {"asr_model": "large-v3"})
         with self.assertRaises(JobError):
             self.engine.submit_video("alice", "https://www.tiktok.com/@someone")
 
@@ -571,6 +580,24 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(self.call("POST", "/v1/routes/unblock", {"platform": "tiktok", "route": "direct"})[0], 403)
         self.assertEqual(self.call("POST", "/v1/routes/unblock", {"platform": "tiktok", "route": "direct"},
                                    key="r" * 20)[0], 200)
+
+    def test_negative_length_is_refused(self):
+        import http.client
+        conn = http.client.HTTPConnection("127.0.0.1", self.server.server_address[1], timeout=10)
+        conn.putrequest("POST", "/v1/jobs")
+        conn.putheader("Authorization", "Bearer " + "a" * 21)
+        conn.putheader("Content-Length", "-1")
+        conn.endheaders()
+        self.assertEqual(conn.getresponse().status, 400)
+        conn.close()
+
+    def test_route_errors_only_for_admins(self):
+        self.engine.routes.record("tiktok", "warp", JobError("challenge", "someone else's link"))
+        _, body, _ = self.call("GET", "/v1/routes")
+        self.assertTrue(all(r["last_error"] is None for r in body["routes"]))
+        _, body, _ = self.call("GET", "/v1/routes", key="r" * 20)
+        self.assertIn("someone else's link", json.dumps(body))
+        self.engine.routes.unblock("tiktok", "warp")
 
 
 if __name__ == "__main__":

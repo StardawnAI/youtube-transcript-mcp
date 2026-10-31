@@ -80,14 +80,24 @@ def _retry_after(exc: BaseException) -> float | None:
     return None
 
 
+def _platform_words(message: str) -> str:
+    """The message without what the caller chose: links, and the video id
+    yt-dlp puts in front ("ERROR: [Instagram] <shortcode>: ..."). Otherwise a
+    shortcode like `rate-limit` would read as a 429 and cool the route down
+    for every caller (security audit 2026-10-31, lead 1)."""
+    message = re.sub(r"https?://\S+", "<link>", message)
+    return re.sub(r"\[[\w:.]+\] [\w.@-]+: ", "", message)
+
+
 def classify(exc: BaseException) -> JobError:
     if isinstance(exc, JobError):
         return exc
     message = str(exc) or type(exc).__name__
     if isinstance(exc, OSError) and getattr(exc, "errno", None) == 28:
         return JobError("disk_full", message)
+    words = _platform_words(message)
     for cls, pattern in _RULES:
-        if re.search(pattern, message):
+        if re.search(pattern, words):
             return JobError(cls, message, _retry_after(exc) if cls == "rate_limited" else None)
     if isinstance(exc, (TimeoutError, ConnectionError)):
         return JobError("network", message)

@@ -1,3 +1,3 @@
 """SMTranscript worker: TikTok and Instagram videos in, stored files and transcripts out."""
 
-VERSION = "1.0.0"
+VERSION = "1.0.1"

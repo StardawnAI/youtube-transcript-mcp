@@ -10,7 +10,10 @@ import { writeConfig } from './config.mjs';
 import { getTranscript } from './youtube.mjs';
 
 export const CONTAINER = 'youtube-transcript-warp';
-const IMAGE = 'caomingjun/warp:latest';
+// Pinned: the container runs with NET_ADMIN, so a new upload under "latest"
+// must not reach machines unseen. This digest is the image of 2026-08-31 that
+// every measurement in docs/STATUS.md ran on. Move it on purpose.
+const IMAGE = 'caomingjun/warp@sha256:d50d29d859bd437420bf63256f803e9fac28657c346b6f5ba50e21ffeb93dff2';
 const TRACE = 'https://www.cloudflare.com/cdn-cgi/trace';
 // A video that always has captions: if its transcript arrives, YouTube accepts this exit.
 const PROBE = 'jNQXAC9IVRw';

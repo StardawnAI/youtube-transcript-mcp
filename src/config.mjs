@@ -1,7 +1,7 @@
 // Small JSON config next to the user's other app settings. Only the proxy
 // lives here, so `warp start` can hand the running server a proxy without a
 // restart: the server reads the file on every call.
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { chmod, readFile, writeFile, mkdir } from 'node:fs/promises';
 import { homedir, platform } from 'node:os';
 import { join } from 'node:path';
 
@@ -24,7 +24,10 @@ export async function writeConfig(patch) {
   const config = { ...(await readConfig()), ...patch };
   for (const [k, v] of Object.entries(config)) if (v === null) delete config[k];
   await mkdir(dir, { recursive: true });
-  await writeFile(CONFIG_FILE, `${JSON.stringify(config, null, 2)}\n`);
+  // It holds the TikTok/Instagram worker's admin key: readable by its owner only.
+  // The mode applies to a new file; chmod covers one written by an older version.
+  await writeFile(CONFIG_FILE, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
+  await chmod(CONFIG_FILE, 0o600);
   return config;
 }
 

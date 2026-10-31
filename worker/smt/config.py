@@ -48,6 +48,9 @@ class Settings:
     instaloader_session: Path | None
     instagram_user: str | None
     info_ttl_s: int = 3600
+    # Models a caller may ask for besides asr_model. Each one asked for stays
+    # loaded, so the list is the memory budget, not a menu.
+    asr_models: tuple = ()
 
     @property
     def db_path(self) -> Path:
@@ -114,6 +117,7 @@ def load() -> Settings:
         min_free_mb=_int("SMT_MIN_FREE_MB", 2048),
         asr_model=os.environ.get("SMT_ASR_MODEL", "large-v3-turbo"),
         asr_device=os.environ.get("SMT_ASR_DEVICE", "auto"),
+        asr_models=tuple(m.strip() for m in os.environ.get("SMT_ASR_MODELS", "small").split(",") if m.strip()),
         cookies_dir=Path(cookies) if cookies else None,
         instaloader_session=Path(session) if session else None,
         instagram_user=os.environ.get("SMT_INSTAGRAM_USER") or None,

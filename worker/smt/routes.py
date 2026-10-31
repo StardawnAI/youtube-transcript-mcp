@@ -53,7 +53,8 @@ class Routes:
         key = f"{platform}:{route}"
         state = self._state(key)
         if state["blocked"]:
-            raise JobError("challenge", f"{key} is blocked until a person unblocks it: {state['last_error']}")
+            # Not the error text itself: it may name another caller's video.
+            raise JobError("challenge", f"{key} is blocked after a login check until a person unblocks it")
         wait = state["cooldown_until"] - time.time()
         if wait > 0:
             raise JobError("rate_limited", f"{key} is cooling down for {int(wait)} s more", retry_after=wait)
@@ -100,7 +101,9 @@ class Routes:
     def unblock(self, platform: str, route: str) -> None:
         self._upsert(f"{platform}:{route}", blocked=0, cooldown_until=0, failures=0, last_error=None)
 
-    def states(self) -> list[dict]:
+    def states(self, admin: bool = False) -> list[dict]:
+        """Pauses and blocks; the error texts behind them only for an admin,
+        because they come from other callers' jobs."""
         rows = {r["key"]: r for r in self.db.all("select * from route_state")}
         out = []
         for platform in ("tiktok", "instagram"):
@@ -110,7 +113,7 @@ class Routes:
                 out.append({
                     "platform": platform, "route": route, "blocked": bool(state["blocked"]),
                     "cooling_down_s": int(wait), "failures_in_a_row": state["failures"],
-                    "last_error": state["last_error"],
+                    "last_error": state["last_error"] if admin else None,
                 })
         return out
 

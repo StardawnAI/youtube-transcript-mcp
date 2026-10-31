@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url';
 import { readConfig, writeConfig } from './config.mjs';
 import { warpRunFlags } from './warp.mjs';
 
-export const WORKER_VERSION = '1.0.0';
+export const WORKER_VERSION = '1.0.1';
 export const WORKER = 'smtranscript-worker';
 export const NETWORK = 'smtranscript';
 export const WARP = 'smtranscript-warp';
@@ -275,7 +275,9 @@ export function shape(result, { includeSegments = true } = {}) {
 // ---------------------------------------------------------------------------
 
 const resolveDir = (dir) => (isAbsolute(dir) ? dir : resolve(process.cwd(), dir));
-const fileName = (r) => `${r.platform}_${r.videoId}`;
+// From the worker's answer, which for a remote worker is someone else's data:
+// only letters, digits, dot, dash and underscore, so no name leaves save_to.
+export const fileName = (r) => `${r.platform}_${r.videoId}`.replace(/[^\w.-]/g, '_').replace(/^\.+/, '_');
 
 function failure(result) {
   const e = result.error || {};

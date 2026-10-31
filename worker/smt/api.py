@@ -61,9 +61,13 @@ def make_handler(engine: Engine):
             return keys.get(auth[7:].strip()) if auth.startswith("Bearer ") else None
 
         def _body(self) -> dict:
-            length = int(self.headers.get("Content-Length") or 0)
-            if length > MAX_BODY:
-                raise JobError("invalid_input", "request body too large")
+            try:
+                length = int(self.headers.get("Content-Length") or 0)
+            except ValueError as exc:
+                raise JobError("invalid_input", "Content-Length is not a number") from exc
+            # A negative length would read to the end of the stream, past the limit.
+            if not 0 <= length <= MAX_BODY:
+                raise JobError("invalid_input", "request body too large, or a negative length")
             raw = self.rfile.read(length) if length else b"{}"
             try:
                 body = json.loads(raw or b"{}")
@@ -97,7 +101,7 @@ def make_handler(engine: Engine):
                                                           body.get("idempotency_key"))
                     return self._send(200 if existing else 202, {**engine.status(job), "existing": existing})
                 if method == "GET" and path == "/v1/routes":
-                    return self._send(200, {"routes": engine.routes.states()})
+                    return self._send(200, {"routes": engine.routes.states(admin=key.admin)})
                 if method == "POST" and path == "/v1/routes/unblock":
                     if not key.admin:
                         return self._error(403, "forbidden", "unblocking a route needs an admin key")

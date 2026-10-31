@@ -44,7 +44,6 @@ LOG = logging.getLogger("smt.engine")
 
 LEASE_S = 90
 MAX_ATTEMPTS = 5
-ASR_MODELS = {"tiny", "base", "small", "medium", "large-v2", "large-v3", "large-v3-turbo", "turbo", "distil-large-v3"}
 ACTIVE = ("queued", "resolving", "fetching", "processing", "retry_wait", "blocked")
 
 
@@ -105,8 +104,9 @@ class Engine:
         if route is not None and route not in self.s.routes:
             raise JobError("invalid_input", f"route {route!r} is not configured here (have: {', '.join(self.s.routes)})")
         model = options.get("asr_model") or self.s.asr_model
-        if model not in ASR_MODELS:
-            raise JobError("invalid_input", f"asr_model must be one of {', '.join(sorted(ASR_MODELS))}")
+        allowed = {self.s.asr_model, *self.s.asr_models}
+        if model not in allowed:
+            raise JobError("invalid_input", f"asr_model must be one of {', '.join(sorted(allowed))} here")
         asr = options.get("asr") or "auto"
         if asr not in ("auto", "always"):
             raise JobError("invalid_input", 'asr is "auto" (captions first) or "always"')
